@@ -31,4 +31,9 @@ python main.py
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+This project is based on [MediaCrawler](https://github.com/NanmiCoder/MediaCrawler) and is subject to dual licensing:
+
+- **Non-Commercial Learning License 1.1** - For learning and research purposes only
+- See [LICENSE](LICENSE) for full details
+
+**Note:** Commercial use requires written permission from the original author.
