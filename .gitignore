@@ -1,0 +1,165 @@
+# ========================
+# Python
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ========================
+# Virtual Environments
+# ========================
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.conda/
+*.conda
+
+# ========================
+# IDE & Editor
+# ========================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+.spyderproject
+.spyproject
+
+# ========================
+# Testing
+# ========================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# ========================
+# Type Checking
+# ========================
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+
+# ========================
+# Jupyter Notebook
+# ========================
+.ipynb_checkpoints
+*.ipynb
+
+# ========================
+# Project Specific
+# ========================
+
+# Browser data (login cookies, sessions)
+browser_data/
+*_user_data_dir/
+
+# Logs
+logs/
+*.log
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Crawled data exports
+*.csv
+*.json
+!package.json
+!tsconfig.json
+data/
+output/
+exports/
+reports/
+
+# Config files with secrets
+config.py
+.env
+.env.*
+!.env.example
+
+# Proxy configuration
+proxy_config.json
+
+# Redis dump
+dump.rdb
+
+# Cache
+.cache/
+cache/
+*.cache
+
+# ========================
+# OS Generated
+# ========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ========================
+# Playwright
+# ========================
+playwright-report/
+test-results/
+playwright/.cache/
+
+# ========================
+# Docker
+# ========================
+.docker/
+
+# ========================
+# Documentation
+# ========================
+site/
+docs/_build/
+
+# ========================
+# Temporary files
+# ========================
+*.tmp
+*.temp
+*.bak
+*.backup
+tmp/
+temp/

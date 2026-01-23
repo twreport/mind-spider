@@ -1,0 +1,177 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mind-spider"
+version = "0.1.0"
+description = "AI-powered sentiment crawler for Chinese social media platforms"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "twreport", email = "twreport@example.com"}
+]
+maintainers = [
+    {name = "twreport", email = "twreport@example.com"}
+]
+keywords = [
+    "crawler",
+    "spider",
+    "sentiment-analysis",
+    "social-media",
+    "chinese",
+    "weibo",
+    "douyin",
+    "xiaohongshu",
+    "bilibili",
+    "playwright"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+requires-python = ">=3.10"
+dependencies = [
+    # Database
+    "pymysql>=1.1.0",
+    "aiomysql>=0.2.0",
+    "asyncmy>=0.2.10",
+    "aiosqlite>=0.21.0",
+    "asyncpg>=0.29.0",
+    "sqlalchemy>=2.0.43",
+    "psycopg[binary]>=3.1.0",
+    "alembic>=1.16.5",
+
+    # HTTP & Network
+    "httpx>=0.28.1",
+    "socksio>=1.0.0",
+    "requests>=2.32.3",
+    "aiofiles>=23.2.1",
+    "cryptography>=46.0.0",
+
+    # AI & NLP
+    "openai>=1.0.0",
+    "jieba>=0.42.1",
+
+    # Browser Automation
+    "playwright>=1.45.0",
+
+    # Data Processing
+    "pydantic>=2.5.2",
+    "pydantic-settings>=2.0.0",
+    "numpy>=1.24.0",
+    "pandas>=2.2.0",
+    "regex>=2023.0.0",
+    "python-dateutil>=2.8.0",
+    "pytz>=2023.0",
+
+    # Web Framework (optional API)
+    "fastapi>=0.110.0",
+    "uvicorn>=0.29.0",
+
+    # Utilities
+    "tenacity>=8.2.2",
+    "opencv-python>=4.8.0",
+    "redis>=4.6.0",
+    "python-dotenv>=1.0.1",
+    "Pillow>=10.0.0,<11",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+    "loguru>=0.7.0",
+    "tqdm>=4.66.0",
+    "typer>=0.12.3",
+    "parsel>=1.9.1",
+    "pyexecjs>=1.5.1",
+    "pyhumps>=3.8.0",
+
+    # Visualization (optional)
+    "wordcloud>=1.9.0",
+    "matplotlib>=3.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.0.0",
+    "mkdocstrings[python]>=0.24.0",
+]
+
+[project.scripts]
+mind-spider = "main:app"
+
+[project.urls]
+Homepage = "https://github.com/twreport/mind-spider"
+Documentation = "https://github.com/twreport/mind-spider#readme"
+Repository = "https://github.com/twreport/mind-spider"
+Issues = "https://github.com/twreport/mind-spider/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["*"]
+exclude = ["tests*", "docs*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311', 'py312']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+    | \.venv
+    | \.mypy_cache
+    | __pycache__
+    | build
+    | dist
+)/
+'''
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+]
+
+[tool.ruff.isort]
+known-first-party = ["mind_spider"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
