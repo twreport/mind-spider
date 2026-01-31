@@ -1,0 +1,234 @@
+# 行业/垂直榜单配置
+# 分类代码: hot_vertical
+# 调度频率: 30-60 分钟
+
+# ============================================
+# 科技
+# ============================================
+
+github_trending:
+  display_name: GitHub Trending
+  category: hot_vertical
+  source_type: scrapy
+  spider_name: github_trending
+  platform: github
+  vertical: tech
+  mongo_collection: hot_vertical
+  dedup_fields:
+    - title
+    - url
+  time_varying_fields:
+    - stars
+    - position
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: true
+
+v2ex_hot:
+  display_name: V2EX 热门
+  category: hot_vertical
+  source_type: scrapy
+  spider_name: v2ex_hot
+  platform: v2ex
+  vertical: tech
+  mongo_collection: hot_vertical
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - replies
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+sspai_hot:
+  display_name: 少数派热门
+  category: hot_vertical
+  source_type: scrapy
+  spider_name: sspai_hot
+  platform: sspai
+  vertical: tech
+  mongo_collection: hot_vertical
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - likes
+    - position
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: true
+
+36kr_hot:
+  display_name: 36氪热榜
+  category: hot_vertical
+  source_type: scrapy
+  spider_name: 36kr_hot
+  platform: 36kr
+  vertical: tech
+  mongo_collection: hot_vertical
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+# ============================================
+# 财经
+# ============================================
+
+xueqiu_hot:
+  display_name: 雪球热帖
+  category: hot_vertical
+  source_type: scrapy
+  spider_name: xueqiu_hot
+  platform: xueqiu
+  vertical: finance
+  mongo_collection: hot_vertical
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - reply_count
+    - like_count
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+eastmoney_hot:
+  display_name: 东方财富热榜
+  category: hot_vertical
+  source_type: scrapy
+  spider_name: eastmoney_hot
+  platform: eastmoney
+  vertical: finance
+  mongo_collection: hot_vertical
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+cls_hot:
+  display_name: 财联社热榜
+  category: hot_vertical
+  source_type: scrapy
+  spider_name: cls_hot
+  platform: cls
+  vertical: finance
+  mongo_collection: hot_vertical
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+# ============================================
+# 游戏/娱乐
+# ============================================
+
+douban_movie:
+  display_name: 豆瓣电影热门
+  category: hot_vertical
+  source_type: scrapy
+  spider_name: douban_movie
+  platform: douban
+  vertical: entertainment
+  mongo_collection: hot_vertical
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - rating
+    - position
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: true
+
+steam_hot:
+  display_name: Steam 热销榜
+  category: hot_vertical
+  source_type: scrapy
+  spider_name: steam_hot
+  platform: steam
+  vertical: game
+  mongo_collection: hot_vertical
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - position
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: true
+
+# ============================================
+# 聚合 API
+# ============================================
+
+newsnow_github:
+  display_name: GitHub Trending(聚合)
+  category: hot_vertical
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: github-trending-today
+  platform: github
+  vertical: tech
+  mongo_collection: hot_vertical
+  dedup_fields:
+    - title
+    - url
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: true
+
+newsnow_xueqiu:
+  display_name: 雪球热帖(聚合)
+  category: hot_vertical
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: xueqiu
+  platform: xueqiu
+  vertical: finance
+  mongo_collection: hot_vertical
+  dedup_fields:
+    - title
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+newsnow_cls:
+  display_name: 财联社(聚合)
+  category: hot_vertical
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: cls-hot
+  platform: cls
+  vertical: finance
+  mongo_collection: hot_vertical
+  dedup_fields:
+    - title
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true

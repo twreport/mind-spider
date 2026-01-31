@@ -1,0 +1,199 @@
+# 传统媒体配置
+# 分类代码: media
+# 调度频率: 每日 1-2 次
+# 主要通过 Scrapy 爬取 + RSSHub 聚合
+
+# ============================================
+# 中央媒体
+# ============================================
+
+rmrb:
+  display_name: 人民日报
+  category: media
+  source_type: scrapy
+  spider_name: rmrb
+  platform: rmrb
+  media_type: central
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - publish_date
+  time_varying_fields: []
+  schedule:
+    type: cron
+    hour: 6
+    minute: 0
+  enabled: true
+
+xinhua:
+  display_name: 新华社
+  category: media
+  source_type: scrapy
+  spider_name: xinhua
+  platform: xinhua
+  media_type: central
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - publish_date
+  time_varying_fields: []
+  schedule:
+    type: cron
+    hour: 6
+    minute: 30
+  enabled: true
+
+cctv:
+  display_name: 央视新闻
+  category: media
+  source_type: scrapy
+  spider_name: cctv
+  platform: cctv
+  media_type: central
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - publish_date
+  time_varying_fields: []
+  schedule:
+    type: cron
+    hour: 7
+    minute: 0
+  enabled: true
+
+xwlb:
+  display_name: 新闻联播
+  category: media
+  source_type: scrapy
+  spider_name: xwlb
+  platform: cctv
+  media_type: central
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - publish_date
+  time_varying_fields: []
+  schedule:
+    type: cron
+    hour: 20
+    minute: 30
+  enabled: true
+
+gmrb:
+  display_name: 光明日报
+  category: media
+  source_type: scrapy
+  spider_name: gmrb
+  platform: gmrb
+  media_type: central
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - publish_date
+  time_varying_fields: []
+  schedule:
+    type: cron
+    hour: 7
+    minute: 30
+  enabled: true
+
+# ============================================
+# 财经媒体
+# ============================================
+
+yicai:
+  display_name: 第一财经
+  category: media
+  source_type: scrapy
+  spider_name: yicai
+  platform: yicai
+  media_type: finance
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - publish_date
+  time_varying_fields: []
+  schedule:
+    type: cron
+    hour: 8
+    minute: 0
+  enabled: true
+
+caixin:
+  display_name: 财新网
+  category: media
+  source_type: scrapy
+  spider_name: caixin
+  platform: caixin
+  media_type: finance
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - publish_date
+  time_varying_fields: []
+  schedule:
+    type: cron
+    hour: 8
+    minute: 30
+  enabled: true
+
+# ============================================
+# RSSHub 聚合
+# ============================================
+
+rsshub_rmrb:
+  display_name: 人民日报(RSS)
+  category: media
+  source_type: aggregator
+  aggregator_name: rsshub
+  aggregator_source: people/paper/rmrb
+  platform: rmrb
+  media_type: central
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - publish_date
+  time_varying_fields: []
+  schedule:
+    type: cron
+    hour: 7
+    minute: 0
+  enabled: true
+
+rsshub_xinhua:
+  display_name: 新华社(RSS)
+  category: media
+  source_type: aggregator
+  aggregator_name: rsshub
+  aggregator_source: xinhuanet/news
+  platform: xinhua
+  media_type: central
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - publish_date
+  time_varying_fields: []
+  schedule:
+    type: cron
+    hour: 7
+    minute: 30
+  enabled: true
+
+rsshub_caixin:
+  display_name: 财新网(RSS)
+  category: media
+  source_type: aggregator
+  aggregator_name: rsshub
+  aggregator_source: caixin/latest
+  platform: caixin
+  media_type: finance
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - publish_date
+  time_varying_fields: []
+  schedule:
+    type: cron
+    hour: 9
+    minute: 0
+  enabled: true

@@ -1,0 +1,70 @@
+# 全局调度配置
+# 定义调度器的全局参数和默认值
+
+scheduler:
+  # 调度器类型: asyncio (推荐) 或 background
+  type: asyncio
+
+  # 任务执行器配置
+  executors:
+    default:
+      type: threadpool
+      max_workers: 10
+    processpool:
+      type: processpool
+      max_workers: 5
+
+  # 任务存储配置 (可选，用于持久化)
+  job_stores:
+    default:
+      type: memory
+    # 如需持久化，可配置 MongoDB
+    # mongodb:
+    #   type: mongodb
+    #   database: mindspider_scheduler
+    #   collection: jobs
+
+  # 默认任务配置
+  job_defaults:
+    coalesce: true  # 合并错过的任务
+    max_instances: 1  # 同一任务最大并发实例数
+    misfire_grace_time: 60  # 错过执行的容忍时间（秒）
+
+# 分类默认调度配置
+category_defaults:
+  hot_national:
+    type: interval
+    minutes: 10
+  hot_local:
+    type: interval
+    minutes: 30
+  hot_vertical:
+    type: interval
+    minutes: 30
+  media:
+    type: cron
+    hour: 6
+    minute: 0
+  wechat:
+    type: interval
+    minutes: 60
+
+# 运行时配置
+runtime:
+  # 启动时是否立即执行一次所有任务
+  run_on_startup: false
+
+  # 是否启用任务执行日志
+  enable_logging: true
+
+  # 日志级别: DEBUG, INFO, WARNING, ERROR
+  log_level: INFO
+
+  # 任务执行超时时间（秒）
+  task_timeout: 300
+
+  # 失败重试次数
+  max_retries: 3
+
+  # 重试间隔（秒）
+  retry_interval: 60

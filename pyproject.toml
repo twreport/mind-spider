@@ -95,6 +95,19 @@ dependencies = [
     # Visualization (optional)
     "wordcloud>=1.9.0",
     "matplotlib>=3.9.0",
+
+    # MongoDB
+    "pymongo>=4.6.0",
+    "motor>=3.3.0",
+
+    # Scrapy
+    "scrapy>=2.11.0",
+
+    # Scheduling
+    "apscheduler>=3.10.0",
+
+    # YAML config
+    "pyyaml>=6.0.0",
 ]
 
 [project.optional-dependencies]

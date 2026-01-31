@@ -1,0 +1,136 @@
+# 微信公众号配置
+# 分类代码: wechat
+# 调度频率: 30 分钟
+# 主要通过 Scrapy 爬取（需要登录态）
+
+# ============================================
+# 时政类公众号
+# ============================================
+
+wechat_rmrb:
+  display_name: 人民日报公众号
+  category: wechat
+  source_type: scrapy
+  spider_name: wechat_article
+  platform: wechat
+  account_id: rmrb
+  account_type: politics
+  mongo_collection: wechat
+  dedup_fields:
+    - title
+    - account_id
+  time_varying_fields:
+    - read_count
+    - like_count
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: false  # 需要配置登录态
+
+wechat_xinhua:
+  display_name: 新华社公众号
+  category: wechat
+  source_type: scrapy
+  spider_name: wechat_article
+  platform: wechat
+  account_id: xinhuashefabu1
+  account_type: politics
+  mongo_collection: wechat
+  dedup_fields:
+    - title
+    - account_id
+  time_varying_fields:
+    - read_count
+    - like_count
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: false
+
+# ============================================
+# 财经类公众号
+# ============================================
+
+wechat_caijing:
+  display_name: 财经杂志公众号
+  category: wechat
+  source_type: scrapy
+  spider_name: wechat_article
+  platform: wechat
+  account_id: i-caijing
+  account_type: finance
+  mongo_collection: wechat
+  dedup_fields:
+    - title
+    - account_id
+  time_varying_fields:
+    - read_count
+    - like_count
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: false
+
+wechat_wallstreetcn:
+  display_name: 华尔街见闻公众号
+  category: wechat
+  source_type: scrapy
+  spider_name: wechat_article
+  platform: wechat
+  account_id: wallstreetcn
+  account_type: finance
+  mongo_collection: wechat
+  dedup_fields:
+    - title
+    - account_id
+  time_varying_fields:
+    - read_count
+    - like_count
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: false
+
+# ============================================
+# 科技类公众号
+# ============================================
+
+wechat_36kr:
+  display_name: 36氪公众号
+  category: wechat
+  source_type: scrapy
+  spider_name: wechat_article
+  platform: wechat
+  account_id: wow36kr
+  account_type: tech
+  mongo_collection: wechat
+  dedup_fields:
+    - title
+    - account_id
+  time_varying_fields:
+    - read_count
+    - like_count
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: false
+
+wechat_huxiu:
+  display_name: 虎嗅公众号
+  category: wechat
+  source_type: scrapy
+  spider_name: wechat_article
+  platform: wechat
+  account_id: huxiu_com
+  account_type: tech
+  mongo_collection: wechat
+  dedup_fields:
+    - title
+    - account_id
+  time_varying_fields:
+    - read_count
+    - like_count
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: false

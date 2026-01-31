@@ -1,0 +1,211 @@
+# 全国热搜配置
+# 分类代码: hot_national
+# 调度频率: 5-15 分钟
+
+# ============================================
+# Scrapy 直接爬取
+# ============================================
+
+weibo_hot:
+  display_name: 微博热搜
+  category: hot_national
+  source_type: scrapy
+  spider_name: weibo_hot
+  platform: weibo
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 5
+  enabled: true
+
+douyin_hot:
+  display_name: 抖音热搜
+  category: hot_national
+  source_type: scrapy
+  spider_name: douyin_hot
+  platform: douyin
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 10
+  enabled: true
+
+baidu_hot:
+  display_name: 百度热搜
+  category: hot_national
+  source_type: scrapy
+  spider_name: baidu_hot
+  platform: baidu
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 10
+  enabled: true
+
+toutiao_hot:
+  display_name: 今日头条热搜
+  category: hot_national
+  source_type: scrapy
+  spider_name: toutiao_hot
+  platform: toutiao
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 10
+  enabled: true
+
+zhihu_hot:
+  display_name: 知乎热榜
+  category: hot_national
+  source_type: scrapy
+  spider_name: zhihu_hot
+  platform: zhihu
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 15
+  enabled: true
+
+bilibili_hot:
+  display_name: B站热搜
+  category: hot_national
+  source_type: scrapy
+  spider_name: bilibili_hot
+  platform: bilibili
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 15
+  enabled: true
+
+# ============================================
+# 第三方聚合 API
+# ============================================
+
+newsnow_weibo:
+  display_name: 微博热搜(聚合)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: weibo
+  platform: weibo
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 10
+  enabled: true
+
+newsnow_zhihu:
+  display_name: 知乎热榜(聚合)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: zhihu
+  platform: zhihu
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 10
+  enabled: true
+
+newsnow_bilibili:
+  display_name: B站热搜(聚合)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: bilibili-hot-search
+  platform: bilibili
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 10
+  enabled: true
+
+newsnow_toutiao:
+  display_name: 今日头条(聚合)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: toutiao
+  platform: toutiao
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 10
+  enabled: true
+
+newsnow_douyin:
+  display_name: 抖音热搜(聚合)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: douyin
+  platform: douyin
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 10
+  enabled: true
+
+tophub_weibo:
+  display_name: 微博热搜(今日热榜)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: tophub
+  aggregator_source: weibo
+  platform: weibo
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 10
+  enabled: false  # 需要配置 API key

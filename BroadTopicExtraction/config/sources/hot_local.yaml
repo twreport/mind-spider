@@ -1,0 +1,177 @@
+# 地方热搜配置
+# 分类代码: hot_local
+# 调度频率: 15-30 分钟
+# 主要通过 Scrapy 爬取各地方媒体和本地热搜
+
+# ============================================
+# 省级热搜
+# ============================================
+
+weibo_local_beijing:
+  display_name: 微博同城-北京
+  category: hot_local
+  source_type: scrapy
+  spider_name: weibo_local
+  platform: weibo
+  region: beijing
+  mongo_collection: hot_local
+  dedup_fields:
+    - title
+    - region
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+weibo_local_shanghai:
+  display_name: 微博同城-上海
+  category: hot_local
+  source_type: scrapy
+  spider_name: weibo_local
+  platform: weibo
+  region: shanghai
+  mongo_collection: hot_local
+  dedup_fields:
+    - title
+    - region
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+weibo_local_guangzhou:
+  display_name: 微博同城-广州
+  category: hot_local
+  source_type: scrapy
+  spider_name: weibo_local
+  platform: weibo
+  region: guangzhou
+  mongo_collection: hot_local
+  dedup_fields:
+    - title
+    - region
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+weibo_local_shenzhen:
+  display_name: 微博同城-深圳
+  category: hot_local
+  source_type: scrapy
+  spider_name: weibo_local
+  platform: weibo
+  region: shenzhen
+  mongo_collection: hot_local
+  dedup_fields:
+    - title
+    - region
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+weibo_local_chengdu:
+  display_name: 微博同城-成都
+  category: hot_local
+  source_type: scrapy
+  spider_name: weibo_local
+  platform: weibo
+  region: chengdu
+  mongo_collection: hot_local
+  dedup_fields:
+    - title
+    - region
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+weibo_local_hangzhou:
+  display_name: 微博同城-杭州
+  category: hot_local
+  source_type: scrapy
+  spider_name: weibo_local
+  platform: weibo
+  region: hangzhou
+  mongo_collection: hot_local
+  dedup_fields:
+    - title
+    - region
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+# ============================================
+# 地方新闻门户
+# ============================================
+
+bjnews:
+  display_name: 新京报
+  category: hot_local
+  source_type: scrapy
+  spider_name: bjnews
+  platform: bjnews
+  region: beijing
+  mongo_collection: hot_local
+  dedup_fields:
+    - title
+    - publish_date
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: true
+
+thepaper:
+  display_name: 澎湃新闻
+  category: hot_local
+  source_type: scrapy
+  spider_name: thepaper
+  platform: thepaper
+  region: shanghai
+  mongo_collection: hot_local
+  dedup_fields:
+    - title
+    - publish_date
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: true
+
+jiemian:
+  display_name: 界面新闻
+  category: hot_local
+  source_type: scrapy
+  spider_name: jiemian
+  platform: jiemian
+  region: shanghai
+  mongo_collection: hot_local
+  dedup_fields:
+    - title
+    - publish_date
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: true
