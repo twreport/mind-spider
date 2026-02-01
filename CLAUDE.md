@@ -9,51 +9,66 @@ MindSpider is an AI-powered sentiment crawler for Chinese social media platforms
 1. **BroadTopicExtraction**: Collects daily trending news and extracts key topics using DeepSeek/OpenAI API
 2. **DeepSentimentCrawling**: Crawls 7 Chinese social media platforms (Xiaohongshu, Douyin, Kuaishou, Bilibili, Weibo, Tieba, Zhihu) based on extracted topics
 
+## Python 环境
+
+本项目统一使用 **uv** 作为 Python 包管理和运行环境。
+
+```bash
+# 安装 uv (如果尚未安装)
+# Windows: powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+# Linux/macOS: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 创建虚拟环境并安装依赖
+uv venv
+uv pip install -e ".[dev]"
+uv run playwright install chromium
+```
+
 ## Commands
 
 ### Installation
 ```bash
-pip install -e .
-playwright install chromium
-pip install -e ".[dev]"  # for development
+uv pip install -e .
+uv run playwright install chromium
+uv pip install -e ".[dev]"  # for development
 ```
 
 ### Running the Project
 ```bash
 # Full workflow (topic extraction + crawling)
-python main.py --complete
+uv run python main.py --complete
 
 # Individual stages
-python main.py --broad-topic --keywords 100
-python main.py --deep-sentiment --platforms xhs dy bili --max-keywords 50 --max-notes 50
+uv run python main.py --broad-topic --keywords 100
+uv run python main.py --deep-sentiment --platforms xhs dy bili --max-keywords 50 --max-notes 50
 
 # Setup and status
-python main.py --setup
-python main.py --status
-python main.py --init-db
+uv run python main.py --setup
+uv run python main.py --status
+uv run python main.py --init-db
 
 # Test mode (reduced data)
-python main.py --complete --test
+uv run python main.py --complete --test
 ```
 
 ### Module-specific Commands
 ```bash
 # BroadTopicExtraction
-cd BroadTopicExtraction && python main.py --keywords 100 --list-sources
+cd BroadTopicExtraction && uv run python main.py --keywords 100 --list-sources
 
 # DeepSentimentCrawling
-cd DeepSentimentCrawling && python main.py --guide
-cd DeepSentimentCrawling && python main.py --list-topics --days 7
-cd DeepSentimentCrawling && python main.py --platform xhs --max-notes 50
+cd DeepSentimentCrawling && uv run python main.py --guide
+cd DeepSentimentCrawling && uv run python main.py --list-topics --days 7
+cd DeepSentimentCrawling && uv run python main.py --platform xhs --max-notes 50
 ```
 
 ### Code Quality
 ```bash
-black .              # format
-ruff check .         # lint
-mypy .               # type check
-pytest tests/ -v     # test
-pre-commit run --all-files
+uv run black .              # format
+uv run ruff check .         # lint
+uv run mypy .               # type check
+uv run pytest tests/ -v     # test
+uv run pre-commit run --all-files
 ```
 
 ## Architecture
