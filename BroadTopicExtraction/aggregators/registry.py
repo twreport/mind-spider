@@ -109,10 +109,25 @@ def _register_builtin_aggregators() -> None:
     from .newsnow import NewsNowAggregator
     from .tophub import TopHubAggregator
     from .rsshub import RSSHubAggregator
+    from .mofish import MoFishAggregator
+    from .anyknew import AnyKnewAggregator
+    from .rebang import RebangAggregator
+    from .jiucai import JiuCaiAggregator
+    from .official import OfficialAPIAggregator
 
-    AggregatorRegistry.register(NewsNowAggregator)
+    # 推荐使用的聚合器
     AggregatorRegistry.register(TopHubAggregator)
+    AggregatorRegistry.register(OfficialAPIAggregator)
+    AggregatorRegistry.register(RebangAggregator)
+
+    # 其他聚合器
+    AggregatorRegistry.register(NewsNowAggregator)
     AggregatorRegistry.register(RSSHubAggregator)
+    AggregatorRegistry.register(AnyKnewAggregator)
+    AggregatorRegistry.register(JiuCaiAggregator)
+
+    # 已废弃但保留
+    AggregatorRegistry.register(MoFishAggregator)
 
 
 # 模块加载时自动注册

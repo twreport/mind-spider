@@ -1,13 +1,67 @@
 # 传统媒体配置
 # 分类代码: media
-# 调度频率: 每日 1-2 次
-# 主要通过 Scrapy 爬取 + RSSHub 聚合
+# 调度频率: 30-120 分钟
+#
+# 数据源状态说明:
+# - scrapy: ✅ 页面爬取，稳定
+# - rsshub: ⚠️ 需自建实例
 
 # ============================================
-# 中央媒体
+# Scrapy 页面爬取 - 中央媒体 (稳定)
 # ============================================
 
-rmrb:
+xinhua_scrapy:
+  display_name: 新华网
+  category: media
+  source_type: scrapy
+  spider_name: xinhua
+  platform: xinhua
+  media_type: central
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - url
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: true
+
+thepaper_scrapy:
+  display_name: 澎湃新闻
+  category: media
+  source_type: scrapy
+  spider_name: thepaper
+  platform: thepaper
+  media_type: central
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - url
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: true
+
+cctv_scrapy:
+  display_name: 央视新闻
+  category: media
+  source_type: scrapy
+  spider_name: cctv
+  platform: cctv
+  media_type: central
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - url
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: true
+
+rmrb_scrapy:
   display_name: 人民日报
   category: media
   source_type: scrapy
@@ -25,61 +79,7 @@ rmrb:
     minute: 0
   enabled: true
 
-xinhua:
-  display_name: 新华社
-  category: media
-  source_type: scrapy
-  spider_name: xinhua
-  platform: xinhua
-  media_type: central
-  mongo_collection: media
-  dedup_fields:
-    - title
-    - publish_date
-  time_varying_fields: []
-  schedule:
-    type: cron
-    hour: 6
-    minute: 30
-  enabled: true
-
-cctv:
-  display_name: 央视新闻
-  category: media
-  source_type: scrapy
-  spider_name: cctv
-  platform: cctv
-  media_type: central
-  mongo_collection: media
-  dedup_fields:
-    - title
-    - publish_date
-  time_varying_fields: []
-  schedule:
-    type: cron
-    hour: 7
-    minute: 0
-  enabled: true
-
-xwlb:
-  display_name: 新闻联播
-  category: media
-  source_type: scrapy
-  spider_name: xwlb
-  platform: cctv
-  media_type: central
-  mongo_collection: media
-  dedup_fields:
-    - title
-    - publish_date
-  time_varying_fields: []
-  schedule:
-    type: cron
-    hour: 20
-    minute: 30
-  enabled: true
-
-gmrb:
+gmrb_scrapy:
   display_name: 光明日报
   category: media
   source_type: scrapy
@@ -93,62 +93,17 @@ gmrb:
   time_varying_fields: []
   schedule:
     type: cron
-    hour: 7
+    hour: 6
     minute: 30
   enabled: true
 
-# ============================================
-# 财经媒体
-# ============================================
-
-yicai:
-  display_name: 第一财经
+jjrb_scrapy:
+  display_name: 经济日报
   category: media
   source_type: scrapy
-  spider_name: yicai
-  platform: yicai
+  spider_name: jjrb
+  platform: jjrb
   media_type: finance
-  mongo_collection: media
-  dedup_fields:
-    - title
-    - publish_date
-  time_varying_fields: []
-  schedule:
-    type: cron
-    hour: 8
-    minute: 0
-  enabled: true
-
-caixin:
-  display_name: 财新网
-  category: media
-  source_type: scrapy
-  spider_name: caixin
-  platform: caixin
-  media_type: finance
-  mongo_collection: media
-  dedup_fields:
-    - title
-    - publish_date
-  time_varying_fields: []
-  schedule:
-    type: cron
-    hour: 8
-    minute: 30
-  enabled: true
-
-# ============================================
-# RSSHub 聚合
-# ============================================
-
-rsshub_rmrb:
-  display_name: 人民日报(RSS)
-  category: media
-  source_type: aggregator
-  aggregator_name: rsshub
-  aggregator_source: people/paper/rmrb
-  platform: rmrb
-  media_type: central
   mongo_collection: media
   dedup_fields:
     - title
@@ -160,13 +115,66 @@ rsshub_rmrb:
     minute: 0
   enabled: true
 
-rsshub_xinhua:
-  display_name: 新华社(RSS)
+mrdx_scrapy:
+  display_name: 新华每日电讯
   category: media
-  source_type: aggregator
-  aggregator_name: rsshub
-  aggregator_source: xinhuanet/news
-  platform: xinhua
+  source_type: scrapy
+  spider_name: mrdx
+  platform: mrdx
+  media_type: central
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - publish_date
+  time_varying_fields: []
+  schedule:
+    type: cron
+    hour: 6
+    minute: 0
+  enabled: true
+
+xwlb_scrapy:
+  display_name: 新闻联播
+  category: media
+  source_type: scrapy
+  spider_name: xwlb
+  platform: xwlb
+  media_type: central
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - publish_date
+  time_varying_fields: []
+  schedule:
+    type: cron
+    hour: 20
+    minute: 30
+  enabled: true
+
+xwzbj_scrapy:
+  display_name: 新闻直播间
+  category: media
+  source_type: scrapy
+  spider_name: xwzbj
+  platform: xwzbj
+  media_type: central
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - publish_date
+  time_varying_fields: []
+  schedule:
+    type: cron
+    hour: 12
+    minute: 0
+  enabled: true
+
+zgqnb_scrapy:
+  display_name: 中国青年报
+  category: media
+  source_type: scrapy
+  spider_name: zgqnb
+  platform: zgqnb
   media_type: central
   mongo_collection: media
   dedup_fields:
@@ -177,7 +185,101 @@ rsshub_xinhua:
     type: cron
     hour: 7
     minute: 30
+  enabled: false  # 网站 URL 结构变化，需要更新爬虫适配
+
+# ============================================
+# Scrapy 页面爬取 - 门户新闻 (稳定)
+# ============================================
+
+sina_news:
+  display_name: 新浪新闻
+  category: media
+  source_type: scrapy
+  spider_name: sina_news
+  platform: sina
+  media_type: portal
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - url
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 60
   enabled: true
+
+netease_news:
+  display_name: 网易新闻
+  category: media
+  source_type: scrapy
+  spider_name: netease_news
+  platform: netease
+  media_type: portal
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - url
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: true
+
+qq_news:
+  display_name: 腾讯新闻
+  category: media
+  source_type: scrapy
+  spider_name: qq_news
+  platform: qq
+  media_type: portal
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - url
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: true
+
+ifeng_news:
+  display_name: 凤凰网
+  category: media
+  source_type: scrapy
+  spider_name: ifeng_news
+  platform: ifeng
+  media_type: portal
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - url
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: true
+
+# ============================================
+# RSSHub 聚合 (需自建实例)
+# ============================================
+
+rsshub_thepaper:
+  display_name: 澎湃新闻(RSS)
+  category: media
+  source_type: aggregator
+  aggregator_name: rsshub
+  aggregator_source: thepaper/newsDetail_channel_25950
+  platform: thepaper
+  media_type: central
+  mongo_collection: media
+  dedup_fields:
+    - title
+    - publish_date
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: false  # 需自建 RSSHub 实例
 
 rsshub_caixin:
   display_name: 财新网(RSS)
@@ -193,7 +295,6 @@ rsshub_caixin:
     - publish_date
   time_varying_fields: []
   schedule:
-    type: cron
-    hour: 9
-    minute: 0
-  enabled: true
+    type: interval
+    minutes: 60
+  enabled: false  # 需自建 RSSHub 实例

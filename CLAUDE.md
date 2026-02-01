@@ -6,8 +6,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MindSpider is an AI-powered sentiment crawler for Chinese social media platforms. It operates as a two-stage pipeline:
 
-1. **BroadTopicExtraction**: Collects daily trending news and extracts key topics using DeepSeek/OpenAI API
-2. **DeepSentimentCrawling**: Crawls 7 Chinese social media platforms (Xiaohongshu, Douyin, Kuaishou, Bilibili, Weibo, Tieba, Zhihu) based on extracted topics
+1. **BroadTopicExtraction (第一阶段)**: 广泛话题提取
+   - **阶段 1.1 - 数据采集**: 从多个信源爬取热榜、新闻、资讯，存入 MongoDB
+   - **阶段 1.2 - AI 热点分析**: 从 MongoDB 中用 AI 分析提取热点话题
+2. **DeepSentimentCrawling (第二阶段)**: 基于热点话题深入爬取 7 个社交平台的详细内容
+
+### 开发进度
+
+| 阶段 | 状态 | 说明 |
+|------|------|------|
+| 1.1 数据采集 | ✅ 已完成 | 8 个聚合器，15 个爬虫，30+ 数据源 |
+| 1.2 AI 热点分析 | 🚧 待开发 | 从 MongoDB 提取热点 |
+| 2.0 深度爬取 | 📋 计划中 | 7 平台详细内容爬取 |
 
 ## Python 环境
 

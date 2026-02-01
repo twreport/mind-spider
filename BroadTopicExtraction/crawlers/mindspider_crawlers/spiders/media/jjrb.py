@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-人民日报爬虫 (迁移自 spiders/rmrb)
+经济日报爬虫 (迁移自 spiders/jjrb)
 
-爬取人民日报电子版文章
-已适配 2024.12 改版后的新 URL 格式
+爬取经济日报电子版文章
 """
 
 import re
-from datetime import date, timedelta
+from datetime import date
 from typing import Generator, Any
 
 import scrapy
@@ -17,14 +16,14 @@ from scrapy.http import Response
 from ..base import MediaSpider
 
 
-class RmrbSpider(MediaSpider):
-    """人民日报爬虫"""
+class JjrbSpider(MediaSpider):
+    """经济日报爬虫"""
 
-    name = "rmrb"
-    source_name = "rmrb"
-    platform = "rmrb"
-    media_type = "central"
-    allowed_domains = ["people.com.cn", "paper.people.com.cn"]
+    name = "jjrb"
+    source_name = "jjrb"
+    platform = "jjrb"
+    media_type = "finance"
+    allowed_domains = ["ce.cn", "paper.ce.cn"]
 
     custom_settings = {
         "DOWNLOAD_DELAY": 1,
@@ -45,15 +44,8 @@ class RmrbSpider(MediaSpider):
 
     def start_requests(self) -> Generator:
         """生成起始请求"""
-        date_int = int(self.date_str)
-
-        # 2024.12.01 之后人民日报改版，URL 格式变化
-        if date_int < 20241201:
-            base_url = f"http://paper.people.com.cn/rmrb/html/{self.year}-{self.month}/{self.day}/"
-            url = f"{base_url}nbs.D110000renmrb_01.htm"
-        else:
-            base_url = f"http://paper.people.com.cn/rmrb/pc/layout/{self.year}{self.month}/{self.day}/"
-            url = f"{base_url}node_01.html"
+        base_url = f"http://paper.ce.cn/pc/layout/{self.year}{self.month}/{self.day}/"
+        url = f"{base_url}node_01.html"
 
         yield scrapy.Request(
             url,
@@ -65,17 +57,17 @@ class RmrbSpider(MediaSpider):
         """解析报纸版面索引"""
         soup = BeautifulSoup(response.body, "lxml")
 
-        # 查找版面导航
-        swips = soup.find("div", class_="swiper-container")
-        if not swips:
-            self.logger.error("未找到版面导航")
+        ul = soup.find("ul", id="layoutlist")
+        if not ul:
+            self.logger.error("未找到版面列表")
             return
 
-        swip_a = swips.find_all("a")
-        for a in swip_a:
-            href = a.get("href", "").replace("./", "")
-            if href:
-                item_url = response.meta["base_url"] + href + "?t=1"
+        lis = ul.find_all("li")
+        for li in lis:
+            a = li.find("a")
+            if a and a.get("href"):
+                href = a["href"]
+                item_url = response.meta["base_url"] + href + "?t=4"
                 yield scrapy.Request(
                     item_url,
                     meta={
@@ -89,7 +81,7 @@ class RmrbSpider(MediaSpider):
         """解析单个版面的文章列表"""
         soup = BeautifulSoup(response.body, "lxml")
 
-        news_list_ul = soup.find("ul", class_="news-list")
+        news_list_ul = soup.find("ul", id="articlelist")
         if not news_list_ul:
             return
 
@@ -105,7 +97,9 @@ class RmrbSpider(MediaSpider):
                 continue
 
             news_title = news_title.replace(" ", "")
-            news_url = response.meta["base_url"] + news_a.get("href", "")
+            href = news_a.get("href", "")
+            # 处理相对路径
+            news_url = href.replace("../../../", "http://paper.ce.cn/pc/")
 
             yield scrapy.Request(
                 news_url,
@@ -126,10 +120,10 @@ class RmrbSpider(MediaSpider):
             return
 
         news_text = news_content_div.text
-        news_text = news_text.replace("　　", "\n").replace("\n\n", "")
+        news_text = news_text.replace(" ", "").replace("\n\n", "")
 
         # 解析文章 ID
-        article_id = self._parse_article_id(response.url, response.meta["date"])
+        article_id = self._parse_article_id(response.url)
 
         # 格式化日期
         date_str = response.meta["date"]
@@ -145,27 +139,13 @@ class RmrbSpider(MediaSpider):
             },
         )
 
-    def _parse_article_id(self, url: str, date_str: str) -> str:
+    def _parse_article_id(self, url: str) -> str:
         """从 URL 解析文章 ID"""
-        date_int = int(date_str)
-
-        if date_int < 20241201:
-            # 旧格式: nbs.D110000renmrb_01-01.htm
-            last_words = url.split("/")[-1]
-            words = last_words.split("_")
-            if len(words) >= 3:
-                w1 = words[1]
-                w2_str_list = words[2].split("-")
-                w2_str = w2_str_list[0]
-                w2 = f"{int(w2_str):02d}"
-                w3 = w2_str_list[1].split(".")[0] if len(w2_str_list) > 1 else "01"
-                return f"{w1}-{w2}-{w3}"
-        else:
-            # 新格式: content_30057986.html
-            last_words = url.split("/")[-1]
-            words = last_words.split("_")
-            if len(words) >= 2:
-                return words[-1].split(".")[0]
-
+        try:
+            # 使用 re 提取 'content_' 和 '.html' 之间的字符
+            match = re.search(r"content_(.*?)\.html", url)
+            if match:
+                return f"{self.date_str}-{match.group(1)}"
+        except (IndexError, ValueError):
+            pass
         return ""
-

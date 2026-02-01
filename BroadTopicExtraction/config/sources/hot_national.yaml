@@ -1,17 +1,24 @@
 # 全国热搜配置
 # 分类代码: hot_national
 # 调度频率: 5-15 分钟
+#
+# 数据源状态说明:
+# - official: ✅ 官方 API，最稳定
+# - tophub: ✅ 聚合平台，稳定
+# - scrapy: ✅ 页面爬取，稳定
+# - mofish: ❌ 已废弃
 
 # ============================================
-# Scrapy 直接爬取
+# 官方 API (最稳定，优先使用)
 # ============================================
 
-weibo_hot:
-  display_name: 微博热搜
+official_baidu:
+  display_name: 百度热搜(官方)
   category: hot_national
-  source_type: scrapy
-  spider_name: weibo_hot
-  platform: weibo
+  source_type: aggregator
+  aggregator_name: official
+  aggregator_source: baidu
+  platform: baidu
   mongo_collection: hot_national
   dedup_fields:
     - title
@@ -23,11 +30,12 @@ weibo_hot:
     minutes: 5
   enabled: true
 
-douyin_hot:
-  display_name: 抖音热搜
+official_douyin:
+  display_name: 抖音热搜(官方)
   category: hot_national
-  source_type: scrapy
-  spider_name: douyin_hot
+  source_type: aggregator
+  aggregator_name: official
+  aggregator_source: douyin
   platform: douyin
   mongo_collection: hot_national
   dedup_fields:
@@ -40,11 +48,88 @@ douyin_hot:
     minutes: 10
   enabled: true
 
-baidu_hot:
-  display_name: 百度热搜
+official_tieba:
+  display_name: 贴吧热议(官方)
   category: hot_national
-  source_type: scrapy
-  spider_name: baidu_hot
+  source_type: aggregator
+  aggregator_name: official
+  aggregator_source: tieba
+  platform: tieba
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 15
+  enabled: true
+
+official_bilibili_search:
+  display_name: B站热搜词(官方)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: official
+  aggregator_source: bilibili_search
+  platform: bilibili
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 15
+  enabled: true
+
+# ============================================
+# 今日热榜聚合 (稳定)
+# ============================================
+
+tophub_weibo:
+  display_name: 微博热搜(今日热榜)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: tophub
+  aggregator_source: weibo
+  platform: weibo
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 5
+  enabled: true
+
+tophub_zhihu:
+  display_name: 知乎热榜(今日热榜)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: tophub
+  aggregator_source: zhihu
+  platform: zhihu
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 10
+  enabled: true
+
+tophub_baidu:
+  display_name: 百度热搜(今日热榜)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: tophub
+  aggregator_source: baidu
   platform: baidu
   mongo_collection: hot_national
   dedup_fields:
@@ -55,6 +140,81 @@ baidu_hot:
   schedule:
     type: interval
     minutes: 10
+  enabled: true
+
+tophub_douyin:
+  display_name: 抖音热搜(今日热榜)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: tophub
+  aggregator_source: douyin
+  platform: douyin
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 10
+  enabled: true
+
+tophub_bilibili:
+  display_name: B站热搜(今日热榜)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: tophub
+  aggregator_source: bilibili
+  platform: bilibili
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 15
+  enabled: true
+
+tophub_toutiao:
+  display_name: 头条热搜(今日热榜)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: tophub
+  aggregator_source: toutiao
+  platform: toutiao
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 10
+  enabled: true
+
+# ============================================
+# Scrapy 页面爬取 (稳定)
+# ============================================
+
+hupu_hot:
+  display_name: 虎扑热榜
+  category: hot_national
+  source_type: scrapy
+  spider_name: hupu_hot
+  platform: hupu
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 15
   enabled: true
 
 toutiao_hot:
@@ -74,8 +234,114 @@ toutiao_hot:
     minutes: 10
   enabled: true
 
+tencent_hot:
+  display_name: 腾讯新闻热搜
+  category: hot_national
+  source_type: scrapy
+  spider_name: tencent_hot
+  platform: tencent
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 10
+  enabled: true
+
+netease_hot:
+  display_name: 网易新闻热搜
+  category: hot_national
+  source_type: scrapy
+  spider_name: netease_hot
+  platform: netease
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 10
+  enabled: true
+
+sina_hot:
+  display_name: 新浪热搜
+  category: hot_national
+  source_type: scrapy
+  spider_name: sina_hot
+  platform: sina
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 10
+  enabled: true
+
+baidu_hot:
+  display_name: 百度热搜(直接爬取)
+  category: hot_national
+  source_type: scrapy
+  spider_name: baidu_hot
+  platform: baidu
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 10
+  enabled: true
+
+douyin_hot:
+  display_name: 抖音热搜(直接爬取)
+  category: hot_national
+  source_type: scrapy
+  spider_name: douyin_hot
+  platform: douyin
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 10
+  enabled: true
+
+# ============================================
+# 需要登录的数据源 (默认禁用)
+# ============================================
+
+weibo_hot:
+  display_name: 微博热搜(直接爬取)
+  category: hot_national
+  source_type: scrapy
+  spider_name: weibo_hot
+  platform: weibo
+  mongo_collection: hot_national
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 5
+  enabled: false  # 需要登录 Cookie
+
 zhihu_hot:
-  display_name: 知乎热榜
+  display_name: 知乎热榜(直接爬取)
   category: hot_national
   source_type: scrapy
   spider_name: zhihu_hot
@@ -89,10 +355,10 @@ zhihu_hot:
   schedule:
     type: interval
     minutes: 15
-  enabled: true
+  enabled: false  # 需要登录 Cookie
 
 bilibili_hot:
-  display_name: B站热搜
+  display_name: B站排行榜(直接爬取)
   category: hot_national
   source_type: scrapy
   spider_name: bilibili_hot
@@ -106,97 +372,17 @@ bilibili_hot:
   schedule:
     type: interval
     minutes: 15
-  enabled: true
+  enabled: false  # 需要登录 Cookie
 
 # ============================================
-# 第三方聚合 API
+# 已废弃的数据源 (禁用)
 # ============================================
 
-newsnow_weibo:
-  display_name: 微博热搜(聚合)
+mofish_weibo:
+  display_name: 微博热搜(鱼塘)
   category: hot_national
   source_type: aggregator
-  aggregator_name: newsnow
-  aggregator_source: weibo
-  platform: weibo
-  mongo_collection: hot_national
-  dedup_fields:
-    - title
-  time_varying_fields: []
-  schedule:
-    type: interval
-    minutes: 10
-  enabled: true
-
-newsnow_zhihu:
-  display_name: 知乎热榜(聚合)
-  category: hot_national
-  source_type: aggregator
-  aggregator_name: newsnow
-  aggregator_source: zhihu
-  platform: zhihu
-  mongo_collection: hot_national
-  dedup_fields:
-    - title
-  time_varying_fields: []
-  schedule:
-    type: interval
-    minutes: 10
-  enabled: true
-
-newsnow_bilibili:
-  display_name: B站热搜(聚合)
-  category: hot_national
-  source_type: aggregator
-  aggregator_name: newsnow
-  aggregator_source: bilibili-hot-search
-  platform: bilibili
-  mongo_collection: hot_national
-  dedup_fields:
-    - title
-  time_varying_fields: []
-  schedule:
-    type: interval
-    minutes: 10
-  enabled: true
-
-newsnow_toutiao:
-  display_name: 今日头条(聚合)
-  category: hot_national
-  source_type: aggregator
-  aggregator_name: newsnow
-  aggregator_source: toutiao
-  platform: toutiao
-  mongo_collection: hot_national
-  dedup_fields:
-    - title
-  time_varying_fields: []
-  schedule:
-    type: interval
-    minutes: 10
-  enabled: true
-
-newsnow_douyin:
-  display_name: 抖音热搜(聚合)
-  category: hot_national
-  source_type: aggregator
-  aggregator_name: newsnow
-  aggregator_source: douyin
-  platform: douyin
-  mongo_collection: hot_national
-  dedup_fields:
-    - title
-  time_varying_fields: []
-  schedule:
-    type: interval
-    minutes: 10
-  enabled: true
-
-tophub_weibo:
-  display_name: 微博热搜(今日热榜)
-  category: hot_national
-  source_type: aggregator
-  aggregator_name: tophub
+  aggregator_name: mofish
   aggregator_source: weibo
   platform: weibo
   mongo_collection: hot_national
@@ -208,4 +394,4 @@ tophub_weibo:
   schedule:
     type: interval
     minutes: 10
-  enabled: false  # 需要配置 API key
+  enabled: false  # 已废弃: DNS 失效

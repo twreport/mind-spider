@@ -4,6 +4,29 @@
 # 主要通过 Scrapy 爬取各地方媒体和本地热搜
 
 # ============================================
+# 贵州地方热搜
+# ============================================
+
+tianyan_hot:
+  display_name: 天眼新闻热搜
+  category: hot_local
+  source_type: scrapy
+  spider_name: tianyan_hot
+  platform: tianyan
+  region: guizhou
+  mongo_collection: hot_local
+  dedup_fields:
+    - title
+    - region
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: false  # DNS 解析失败，todayguizhou.com 域名无法访问
+
+# ============================================
 # 省级热搜
 # ============================================
 

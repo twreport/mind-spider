@@ -1,49 +1,43 @@
 # -*- coding: utf-8 -*-
 """
-今日热榜 (TopHub) 聚合器
+今日热榜 (tophub.today) 聚合器
 
-基于今日热榜 API 获取各平台热搜数据
-API 文档: https://tophub.today/
+基于今日热榜获取各平台热搜数据
+这是目前最稳定的聚合源之一
+
+测试状态: ✅ 可用
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from loguru import logger
 
 from .base import BaseAggregator, AggregatorResult
 
 
 class TopHubAggregator(BaseAggregator):
-    """今日热榜聚合器"""
+    """今日热榜聚合器 - 推荐使用"""
 
     name = "tophub"
     display_name = "今日热榜"
     base_url = "https://tophub.today"
 
-    # 节点 ID 映射 (需要根据实际 API 调整)
+    # 节点 ID 映射 (已验证可用)
     SOURCE_MAP = {
+        # 社交媒体 - 已验证
         "weibo": {"node_id": "KqndgxeLl9", "name": "微博热搜"},
         "zhihu": {"node_id": "mproPpoq6O", "name": "知乎热榜"},
         "baidu": {"node_id": "Jb0vmloB1G", "name": "百度热搜"},
         "toutiao": {"node_id": "x9ozB4KG8m", "name": "今日头条"},
         "douyin": {"node_id": "DpQvNABoNE", "name": "抖音热搜"},
         "bilibili": {"node_id": "74KvxwokxM", "name": "B站热搜"},
+        # 科技
         "36kr": {"node_id": "Q1Vd5Ko85R", "name": "36氪"},
         "ithome": {"node_id": "Y2KeDGQdNP", "name": "IT之家"},
         "huxiu": {"node_id": "5VaobgvAj1", "name": "虎嗅"},
+        # 其他
         "douban-movie": {"node_id": "NKGoRAzel6", "name": "豆瓣电影"},
         "github": {"node_id": "Wdz5zaLYo3", "name": "GitHub"},
     }
-
-    def __init__(self, api_key: Optional[str] = None, timeout: float = 30.0):
-        """
-        初始化今日热榜聚合器
-
-        Args:
-            api_key: API 密钥 (部分接口需要)
-            timeout: 请求超时时间
-        """
-        super().__init__(timeout)
-        self.api_key = api_key
 
     def get_supported_sources(self) -> List[str]:
         """获取支持的数据源列表"""
@@ -74,15 +68,14 @@ class TopHubAggregator(BaseAggregator):
 
         try:
             client = await self._get_client()
-
-            headers = {}
-            if self.api_key:
-                headers["Authorization"] = f"Bearer {self.api_key}"
-
-            response = await client.get(url, headers=headers)
+            response = await client.get(url)
             response.raise_for_status()
 
             data = response.json()
+
+            # 检查 API 返回状态
+            if data.get("error"):
+                return self._make_error_result(source, data.get("msg", "API error"))
 
             # 解析数据
             items = self._parse_items(data, source)

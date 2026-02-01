@@ -171,6 +171,114 @@ class TestSpiderParsing:
 
         assert RmrbSpider.name == "rmrb"
 
+    def test_zhihu_spider_exists(self):
+        """测试知乎爬虫存在"""
+        from BroadTopicExtraction.crawlers.mindspider_crawlers.spiders.hot_national.zhihu import (
+            ZhihuHotSpider,
+        )
+
+        assert ZhihuHotSpider.name == "zhihu_hot"
+        assert ZhihuHotSpider.platform == "zhihu"
+
+    def test_bilibili_spider_exists(self):
+        """测试B站爬虫存在"""
+        from BroadTopicExtraction.crawlers.mindspider_crawlers.spiders.hot_national.bilibili import (
+            BilibiliHotSpider,
+        )
+
+        assert BilibiliHotSpider.name == "bilibili_hot"
+        assert BilibiliHotSpider.platform == "bilibili"
+
+    def test_hupu_spider_exists(self):
+        """测试虎扑爬虫存在"""
+        from BroadTopicExtraction.crawlers.mindspider_crawlers.spiders.hot_national.hupu import (
+            HupuHotSpider,
+        )
+
+        assert HupuHotSpider.name == "hupu_hot"
+        assert HupuHotSpider.platform == "hupu"
+
+    def test_ithome_spider_exists(self):
+        """测试IT之家爬虫存在"""
+        from BroadTopicExtraction.crawlers.mindspider_crawlers.spiders.hot_vertical.ithome import (
+            ITHomeSpider,
+        )
+
+        assert ITHomeSpider.name == "ithome"
+        assert ITHomeSpider.vertical == "tech"
+
+    def test_huxiu_spider_exists(self):
+        """测试虎嗅爬虫存在"""
+        from BroadTopicExtraction.crawlers.mindspider_crawlers.spiders.hot_vertical.huxiu import (
+            HuxiuSpider,
+        )
+
+        assert HuxiuSpider.name == "huxiu"
+        assert HuxiuSpider.vertical == "tech"
+
+    def test_kr36_spider_exists(self):
+        """测试36氪爬虫存在"""
+        from BroadTopicExtraction.crawlers.mindspider_crawlers.spiders.hot_vertical.kr36 import (
+            Kr36Spider,
+        )
+
+        assert Kr36Spider.name == "36kr"
+        assert Kr36Spider.vertical == "tech"
+
+    def test_cls_spider_exists(self):
+        """测试财联社爬虫存在"""
+        from BroadTopicExtraction.crawlers.mindspider_crawlers.spiders.hot_vertical.cls import (
+            CLSSpider,
+        )
+
+        assert CLSSpider.name == "cls"
+        assert CLSSpider.vertical == "finance"
+
+    def test_xueqiu_spider_exists(self):
+        """测试雪球爬虫存在"""
+        from BroadTopicExtraction.crawlers.mindspider_crawlers.spiders.hot_vertical.xueqiu import (
+            XueqiuSpider,
+        )
+
+        assert XueqiuSpider.name == "xueqiu"
+        assert XueqiuSpider.vertical == "finance"
+
+    def test_juejin_spider_exists(self):
+        """测试掘金爬虫存在"""
+        from BroadTopicExtraction.crawlers.mindspider_crawlers.spiders.hot_vertical.juejin import (
+            JuejinSpider,
+        )
+
+        assert JuejinSpider.name == "juejin"
+        assert JuejinSpider.vertical == "tech"
+
+    def test_xinhua_spider_exists(self):
+        """测试新华网爬虫存在"""
+        from BroadTopicExtraction.crawlers.mindspider_crawlers.spiders.media.xinhua import (
+            XinhuaSpider,
+        )
+
+        assert XinhuaSpider.name == "xinhua"
+        assert XinhuaSpider.media_type == "central"
+
+    def test_thepaper_spider_exists(self):
+        """测试澎湃新闻爬虫存在"""
+        from BroadTopicExtraction.crawlers.mindspider_crawlers.spiders.media.thepaper import (
+            ThePaperSpider,
+        )
+
+        assert ThePaperSpider.name == "thepaper"
+        assert ThePaperSpider.media_type == "central"
+
+    def test_cctv_spider_exists(self):
+        """测试央视新闻爬虫存在"""
+        from BroadTopicExtraction.crawlers.mindspider_crawlers.spiders.media.cctv import (
+            CCTVSpider,
+        )
+
+        assert CCTVSpider.name == "cctv"
+        assert CCTVSpider.media_type == "central"
+
 
 class TestScrapyPipelines:
     """测试 Scrapy Pipelines"""
