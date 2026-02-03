@@ -171,3 +171,7 @@ News Sources → BroadTopicExtraction → daily_topics table → DeepSentimentCr
 ### 适用场景
 
 本项目更适合**小规模、研究性质**的舆情监测场景。如果要做生产级的集群爬虫系统，需要补充分布式调度、反爬对抗、监控告警等能力。
+
+## 相关文档
+
+- **DEPLOYMENT.md** - 部署指南，包含服务器配置、反爬策略、各平台风控特点、数据量估算
