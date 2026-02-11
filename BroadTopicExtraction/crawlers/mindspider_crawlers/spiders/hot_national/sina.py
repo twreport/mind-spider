@@ -46,26 +46,23 @@ class SinaHotSpider(HotSearchSpider):
             self.logger.error("JSON 解析失败")
             return
 
-        # 尝试不同的数据结构
-        news_list = data.get("data", {}).get("result", [])
-        if not news_list:
-            # 备用结构
-            news_list = data.get("data", {}).get("list", [])
-
-        if not news_list:
+        hot_list = data.get("data", {}).get("hotList", [])
+        if not hot_list:
             self.logger.warning("新浪热搜数据为空")
             return
 
-        for rank, item in enumerate(news_list, start=1):
-            # 支持不同的字段名
-            title = item.get("text") or item.get("title") or item.get("name", "")
+        for rank, item in enumerate(hot_list, start=1):
+            info = item.get("info", {})
+            base = item.get("base", {}).get("base", {})
+
+            title = info.get("title", "")
             if not title:
                 continue
 
-            url = item.get("link") or item.get("url", "")
+            url = base.get("url", "")
 
-            # 处理热度值（可能带"万"）
-            hot_value_str = str(item.get("hotValue", 0) or item.get("hot", 0))
+            # 处理热度值（格式如 "336万"）
+            hot_value_str = str(info.get("hotValue", "0"))
             hot_value_str = hot_value_str.replace("万", "0000")
             try:
                 hot_value = int(float(hot_value_str))
@@ -78,8 +75,8 @@ class SinaHotSpider(HotSearchSpider):
                 position=rank,
                 hot_value=hot_value,
                 extra={
-                    "category": item.get("category", ""),
+                    "tag": info.get("showTag", []),
                 },
             )
 
-        self.logger.info(f"获取 {len(news_list)} 条新浪热搜")
+        self.logger.info(f"获取 {len(hot_list)} 条新浪热搜")

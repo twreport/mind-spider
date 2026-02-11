@@ -64,13 +64,26 @@ class ConfigLoader:
         """
         获取指定信源的配置
 
+        支持两种查找方式：
+        1. 直接匹配 YAML key（如 cctv_scrapy）
+        2. 匹配 spider_name 字段（如 cctv）
+
         Args:
-            source_name: 信源名称
+            source_name: 信源名称或 spider_name
 
         Returns:
             信源配置字典，不存在则返回 None
         """
-        return self._sources.get(source_name)
+        # 直接匹配 YAML key
+        if source_name in self._sources:
+            return self._sources[source_name]
+
+        # 回退：按 spider_name 查找
+        for config in self._sources.values():
+            if config.get("spider_name") == source_name:
+                return config
+
+        return None
 
     def get_all_sources(self) -> Dict[str, dict]:
         """获取所有信源配置"""

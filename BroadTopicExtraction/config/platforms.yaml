@@ -1,0 +1,369 @@
+# 平台配置
+# 集中管理所有平台的元数据、字段映射、反爬配置
+
+# ============================================
+# 社交媒体平台
+# ============================================
+
+weibo:
+  name: 微博
+  type: social
+  risk_level: medium  # low/medium/high
+  field_mapping:
+    title: title_sub
+    hot_value: hot_num
+    url: scheme
+  crawl_config:
+    min_delay: 2
+    max_delay: 8
+    max_concurrency: 3
+  notes: 登录态检测，需稳定 Cookie
+
+douyin:
+  name: 抖音
+  type: social
+  risk_level: high
+  field_mapping:
+    title: word
+    hot_value: hot_value
+    url: ~  # 无直接链接，需拼接
+    position: position
+  crawl_config:
+    min_delay: 3
+    max_delay: 10
+    max_concurrency: 2
+  notes: 设备指纹 + a_bogus 签名
+
+baidu:
+  name: 百度
+  type: search
+  risk_level: low
+  field_mapping:
+    title: query
+    hot_value: hotScore
+    url: url
+    position: index
+  crawl_config:
+    min_delay: 1
+    max_delay: 5
+    max_concurrency: 5
+  notes: 风控宽松
+
+zhihu:
+  name: 知乎
+  type: social
+  risk_level: medium
+  field_mapping:
+    title: title
+    hot_value: detail_text
+    url: url
+  crawl_config:
+    min_delay: 3
+    max_delay: 8
+    max_concurrency: 2
+  notes: 频率敏感，需低速爬取
+
+bilibili:
+  name: 哔哩哔哩
+  type: video
+  risk_level: low
+  field_mapping:
+    title: keyword
+    hot_value: heat
+    url: goto
+    position: pos
+  crawl_config:
+    min_delay: 1
+    max_delay: 5
+    max_concurrency: 5
+  notes: WBI 签名验证，频率适中即可
+
+toutiao:
+  name: 今日头条
+  type: news
+  risk_level: low
+  field_mapping:
+    title: Title
+    hot_value: HotValue
+    url: Url
+    position: ClusterIdStr
+  crawl_config:
+    min_delay: 1
+    max_delay: 5
+    max_concurrency: 5
+  notes: API 稳定
+
+tencent:
+  name: 腾讯新闻
+  type: news
+  risk_level: low
+  field_mapping:
+    title: title
+    hot_value: readCount
+    url: url
+    position: rank
+  crawl_config:
+    min_delay: 1
+    max_delay: 5
+    max_concurrency: 5
+  notes: API 稳定
+
+netease:
+  name: 网易新闻
+  type: news
+  risk_level: low
+  field_mapping:
+    title: title
+    hot_value: voteCount
+    url: docId
+    position: ~
+  crawl_config:
+    min_delay: 1
+    max_delay: 5
+    max_concurrency: 5
+  notes: API 稳定
+
+sina:
+  name: 新浪
+  type: news
+  risk_level: low
+  field_mapping:
+    title: title
+    hot_value: hotValue
+    url: url
+    position: rank
+  crawl_config:
+    min_delay: 1
+    max_delay: 5
+    max_concurrency: 5
+  notes: API 稳定
+
+hupu:
+  name: 虎扑
+  type: sports
+  risk_level: low
+  field_mapping:
+    title: title
+    hot_value: reply
+    url: url
+    position: ~
+  crawl_config:
+    min_delay: 1
+    max_delay: 5
+    max_concurrency: 5
+  notes: 风控宽松
+
+kuaishou:
+  name: 快手
+  type: video
+  risk_level: medium
+  field_mapping:
+    title: name
+    hot_value: hotValue
+    url: ~
+  crawl_config:
+    min_delay: 2
+    max_delay: 8
+    max_concurrency: 3
+  notes: 需要登录态
+
+tieba:
+  name: 贴吧
+  type: social
+  risk_level: low
+  field_mapping:
+    title: title
+    hot_value: discuss_num
+    url: url
+  crawl_config:
+    min_delay: 1
+    max_delay: 5
+    max_concurrency: 5
+  notes: 相对简单
+
+# ============================================
+# 垂直平台
+# ============================================
+
+ithome:
+  name: IT之家
+  type: tech
+  risk_level: low
+  field_mapping:
+    title: title
+    hot_value: commentCount
+    url: url
+  crawl_config:
+    min_delay: 1
+    max_delay: 5
+    max_concurrency: 5
+
+huxiu:
+  name: 虎嗅
+  type: tech
+  risk_level: low
+  field_mapping:
+    title: title
+    hot_value: count
+    url: url
+  crawl_config:
+    min_delay: 1
+    max_delay: 5
+    max_concurrency: 5
+
+kr36:
+  name: 36氪
+  type: tech
+  risk_level: low
+  field_mapping:
+    title: title
+    hot_value: ~
+    url: url
+  crawl_config:
+    min_delay: 1
+    max_delay: 5
+    max_concurrency: 5
+
+cls:
+  name: 财联社
+  type: finance
+  risk_level: low
+  field_mapping:
+    title: title
+    hot_value: ~
+    url: url
+  crawl_config:
+    min_delay: 1
+    max_delay: 5
+    max_concurrency: 5
+
+xueqiu:
+  name: 雪球
+  type: finance
+  risk_level: low
+  field_mapping:
+    title: title
+    hot_value: count
+    url: target
+  crawl_config:
+    min_delay: 1
+    max_delay: 5
+    max_concurrency: 5
+
+juejin:
+  name: 掘金
+  type: tech
+  risk_level: low
+  field_mapping:
+    title: title
+    hot_value: hot_rank
+    url: ~
+  crawl_config:
+    min_delay: 1
+    max_delay: 5
+    max_concurrency: 5
+
+# ============================================
+# 传统媒体
+# ============================================
+
+rmrb:
+  name: 人民日报
+  type: media
+  risk_level: low
+  field_mapping:
+    title: title
+    url: url
+    publish_date: publish_date
+    content: content
+  crawl_config:
+    min_delay: 1
+    max_delay: 3
+    max_concurrency: 5
+  notes: 每日更新，早上 6 点后爬取
+
+xinhua:
+  name: 新华网
+  type: media
+  risk_level: low
+  field_mapping:
+    title: title
+    url: url
+    publish_date: publish_date
+  crawl_config:
+    min_delay: 1
+    max_delay: 3
+    max_concurrency: 5
+
+gmrb:
+  name: 光明日报
+  type: media
+  risk_level: low
+  field_mapping:
+    title: title
+    url: url
+    publish_date: publish_date
+  crawl_config:
+    min_delay: 1
+    max_delay: 3
+    max_concurrency: 5
+
+jjrb:
+  name: 经济日报
+  type: media
+  risk_level: low
+  field_mapping:
+    title: title
+    url: url
+    publish_date: publish_date
+  crawl_config:
+    min_delay: 1
+    max_delay: 3
+    max_concurrency: 5
+
+cctv:
+  name: 央视新闻
+  type: media
+  risk_level: low
+  field_mapping:
+    title: title
+    url: url
+    publish_date: publish_date
+  crawl_config:
+    min_delay: 1
+    max_delay: 3
+    max_concurrency: 5
+
+thepaper:
+  name: 澎湃新闻
+  type: media
+  risk_level: low
+  field_mapping:
+    title: title
+    url: url
+    publish_date: publish_date
+  crawl_config:
+    min_delay: 1
+    max_delay: 3
+    max_concurrency: 5
+
+# ============================================
+# 统一字段说明
+# ============================================
+#
+# MongoDB 统一字段名:
+#   title       - 标题
+#   hot_value   - 热度值
+#   url         - 链接
+#   position    - 排名
+#   platform    - 平台代码
+#   crawl_time  - 爬取时间
+#   publish_date - 发布日期（媒体类）
+#   content     - 正文内容（媒体类）
+#   region      - 地区（地方热搜）
+#   vertical    - 垂直领域（垂直榜单）
+#
+# field_mapping 说明:
+#   左边是 MongoDB 统一字段名
+#   右边是该平台原始 API 返回的字段名
+#   ~ 表示该平台无此字段

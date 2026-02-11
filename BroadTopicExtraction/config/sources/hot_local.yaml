@@ -165,11 +165,11 @@ bjnews:
     minutes: 60
   enabled: true
 
-thepaper:
+thepaper_local:
   display_name: 澎湃新闻
   category: hot_local
   source_type: scrapy
-  spider_name: thepaper
+  spider_name: thepaper_local
   platform: thepaper
   region: shanghai
   mongo_collection: hot_local

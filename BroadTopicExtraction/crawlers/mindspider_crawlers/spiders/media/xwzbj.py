@@ -61,9 +61,11 @@ class XwzbjSpider(MediaSpider):
     def parse(self, response: Response) -> Generator:
         """解析 API 响应"""
         try:
-            # 去掉 JSONP 包装: cb({...})
+            # 去掉 JSONP 包装: cb({...});
             body = response.body.decode("utf-8")
-            json_str = body[3:-1] if body.startswith("cb(") else body
+            start = body.index("(") + 1
+            end = body.rindex(")")
+            json_str = body[start:end]
             data = json.loads(json_str)
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
             self.logger.error(f"JSON 解析失败: {e}")

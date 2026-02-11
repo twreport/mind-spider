@@ -43,15 +43,18 @@ class MrdxSpider(MediaSpider):
         self.date_str = f"{self.year}{self.month}{self.day}"
 
     def start_requests(self) -> Generator:
-        """生成起始请求"""
+        """生成起始请求 - 尝试多种 URL 后缀"""
         base_url = f"http://mrdx.cn/content/{self.date_str}/"
-        url = f"{base_url}Page01DK.htm"
 
-        yield scrapy.Request(
-            url,
-            meta={"date": self.date_str, "base_url": base_url},
-            callback=self.parse_index,
-        )
+        # 不同时期使用不同后缀: BC (2025+), DK (旧版)
+        for suffix in ["Page01BC.htm", "Page01DK.htm"]:
+            yield scrapy.Request(
+                base_url + suffix,
+                meta={"date": self.date_str, "base_url": base_url},
+                callback=self.parse_index,
+                errback=lambda f: self.logger.debug(f"URL 不可用: {f.request.url}"),
+                dont_filter=True,
+            )
 
     def parse_index(self, response: Response) -> Generator:
         """解析报纸版面索引"""
