@@ -25,6 +25,7 @@ project_root = module_dir.parent
 sys.path.insert(0, str(module_dir))
 sys.path.insert(0, str(project_root))
 
+from config import settings
 from scheduler.scheduler import MindSpiderScheduler
 from scheduler.runner import TaskRunner
 
@@ -43,8 +44,8 @@ logger.add(
     format="{time:YYYY-MM-DD HH:mm:ss} | {level:<7} | {message}",
 )
 
-# MongoDB 配置
-MONGO_URI = "mongodb://localhost:27017"
+# MongoDB 配置 (从统一配置读取)
+MONGO_URI = settings.MONGO_URI
 
 
 async def start_scheduler(categories=None, mongo_uri=MONGO_URI):
