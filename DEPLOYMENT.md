@@ -43,6 +43,11 @@ cp .env.example .env
 
 # 5. 设置时区
 timedatectl set-timezone Asia/Shanghai
+
+# 6. 启动调度器
+uv run python BroadTopicExtraction/start_scheduler.py                    # 持续调度
+uv run python BroadTopicExtraction/start_scheduler.py --once             # 执行一次
+uv run python BroadTopicExtraction/start_scheduler.py --log-level ERROR  # 终端只显示错误
 ```
 
 ## 三、反爬配置

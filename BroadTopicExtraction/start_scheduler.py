@@ -8,6 +8,7 @@ MindSpider 数据采集调度器 - 一键启动脚本
     uv run python BroadTopicExtraction/start_scheduler.py --categories hot_national hot_vertical
     uv run python BroadTopicExtraction/start_scheduler.py --once
     uv run python BroadTopicExtraction/start_scheduler.py --list
+    uv run python BroadTopicExtraction/start_scheduler.py --log-level ERROR
 """
 
 import sys
@@ -33,16 +34,19 @@ from scheduler.runner import TaskRunner
 LOG_DIR = module_dir / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
-logger.remove()
-logger.add(sys.stderr, level="INFO", format="{time:HH:mm:ss} | {level:<7} | {message}")
-logger.add(
-    LOG_DIR / "scheduler_{time:YYYY-MM-DD}.log",
-    rotation="00:00",
-    retention="30 days",
-    level="DEBUG",
-    encoding="utf-8",
-    format="{time:YYYY-MM-DD HH:mm:ss} | {level:<7} | {message}",
-)
+
+def setup_logging(level: str = "INFO"):
+    """配置日志级别，level 控制终端输出，文件始终记录 DEBUG"""
+    logger.remove()
+    logger.add(sys.stderr, level=level.upper(), format="{time:HH:mm:ss} | {level:<7} | {message}")
+    logger.add(
+        LOG_DIR / "scheduler_{time:YYYY-MM-DD}.log",
+        rotation="00:00",
+        retention="30 days",
+        level="DEBUG",
+        encoding="utf-8",
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level:<7} | {message}",
+    )
 
 # MongoDB 配置 (从统一配置读取)
 MONGO_URI = settings.MONGO_URI
@@ -169,9 +173,15 @@ def main():
     parser.add_argument("--once", action="store_true", help="所有任务执行一次后退出")
     parser.add_argument("--list", action="store_true", help="列出所有启用的数据源")
     parser.add_argument("--mongo-uri", default=MONGO_URI, help="MongoDB 连接 URI")
+    parser.add_argument(
+        "--log-level", default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="终端日志级别 (默认 INFO，文件日志始终为 DEBUG)",
+    )
 
     args = parser.parse_args()
 
+    setup_logging(args.log_level)
     mongo_uri = args.mongo_uri
 
     if args.list:

@@ -72,7 +72,14 @@ uv run python main.py --complete --test
 
 ### Module-specific Commands
 ```bash
-# BroadTopicExtraction
+# BroadTopicExtraction - 调度器
+uv run python BroadTopicExtraction/start_scheduler.py                          # 启动持续调度
+uv run python BroadTopicExtraction/start_scheduler.py --once                   # 所有任务执行一次
+uv run python BroadTopicExtraction/start_scheduler.py --list                   # 列出所有数据源
+uv run python BroadTopicExtraction/start_scheduler.py --log-level ERROR        # 终端只显示错误
+uv run python BroadTopicExtraction/start_scheduler.py --categories hot_national hot_vertical  # 只跑指定分类
+
+# BroadTopicExtraction - 旧入口
 cd BroadTopicExtraction && uv run python main.py --keywords 100 --list-sources
 
 # DeepSentimentCrawling
