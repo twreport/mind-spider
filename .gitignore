@@ -135,6 +135,7 @@ cache/
 ehthumbs.db
 Thumbs.db
 desktop.ini
+nul
 
 # ========================
 # Playwright
