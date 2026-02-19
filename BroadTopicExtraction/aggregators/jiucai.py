@@ -4,6 +4,9 @@
 
 基于韭菜公社获取财经热榜数据
 网站: https://www.jiucaigongshe.com
+
+[已失效] 站点为纯 SPA，无公开 API 端点
+保留代码供参考，但默认禁用
 """
 
 from typing import Dict, List, Any

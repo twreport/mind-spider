@@ -118,15 +118,15 @@ def _register_builtin_aggregators() -> None:
     # 推荐使用的聚合器
     AggregatorRegistry.register(TopHubAggregator)
     AggregatorRegistry.register(OfficialAPIAggregator)
-    AggregatorRegistry.register(RebangAggregator)
-
-    # 其他聚合器
     AggregatorRegistry.register(NewsNowAggregator)
+
+    # 需自建实例
     AggregatorRegistry.register(RSSHubAggregator)
+
+    # 已失效 (SPA 无公开 API，保留代码供参考)
+    AggregatorRegistry.register(RebangAggregator)
     AggregatorRegistry.register(AnyKnewAggregator)
     AggregatorRegistry.register(JiuCaiAggregator)
-
-    # 已废弃但保留
     AggregatorRegistry.register(MoFishAggregator)
 
 

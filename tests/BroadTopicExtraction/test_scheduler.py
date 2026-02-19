@@ -185,7 +185,10 @@ class TestTaskRunner:
         """测试 Scrapy 任务成功"""
         with patch("BroadTopicExtraction.scheduler.runner.DataProcessor"):
             with patch("subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=0)
+                mock_run.return_value = MagicMock(
+                    returncode=0,
+                    stderr="2026-01-01 [scrapy.statscollectors] INFO: Dumping Scrapy stats:\n{'item_scraped_count': 10}",
+                )
 
                 from BroadTopicExtraction.scheduler.runner import TaskRunner
 

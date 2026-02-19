@@ -1,6 +1,6 @@
 # 全国热搜配置
 # 分类代码: hot_national
-# 调度频率: 5-15 分钟
+# 调度频率: 30 分钟
 #
 # 数据源状态说明:
 # - official: ✅ 官方 API，最稳定
@@ -19,7 +19,7 @@ official_baidu:
   aggregator_name: official
   aggregator_source: baidu
   platform: baidu
-  mongo_collection: hot_national
+  mongo_collection: aggregator
   dedup_fields:
     - title
   time_varying_fields:
@@ -27,7 +27,7 @@ official_baidu:
     - position
   schedule:
     type: interval
-    minutes: 5
+    minutes: 30
   enabled: true
 
 official_douyin:
@@ -37,7 +37,7 @@ official_douyin:
   aggregator_name: official
   aggregator_source: douyin
   platform: douyin
-  mongo_collection: hot_national
+  mongo_collection: aggregator
   dedup_fields:
     - title
   time_varying_fields:
@@ -45,8 +45,8 @@ official_douyin:
     - position
   schedule:
     type: interval
-    minutes: 10
-  enabled: true
+    minutes: 30
+  enabled: false  # 需要特殊认证，API 返回空数据
 
 official_tieba:
   display_name: 贴吧热议(官方)
@@ -55,7 +55,7 @@ official_tieba:
   aggregator_name: official
   aggregator_source: tieba
   platform: tieba
-  mongo_collection: hot_national
+  mongo_collection: aggregator
   dedup_fields:
     - title
   time_varying_fields:
@@ -63,7 +63,7 @@ official_tieba:
     - position
   schedule:
     type: interval
-    minutes: 15
+    minutes: 30
   enabled: true
 
 official_bilibili_search:
@@ -73,7 +73,7 @@ official_bilibili_search:
   aggregator_name: official
   aggregator_source: bilibili_search
   platform: bilibili
-  mongo_collection: hot_national
+  mongo_collection: aggregator
   dedup_fields:
     - title
   time_varying_fields:
@@ -81,7 +81,7 @@ official_bilibili_search:
     - position
   schedule:
     type: interval
-    minutes: 15
+    minutes: 30
   enabled: true
 
 # ============================================
@@ -95,7 +95,7 @@ tophub_weibo:
   aggregator_name: tophub
   aggregator_source: weibo
   platform: weibo
-  mongo_collection: hot_national
+  mongo_collection: aggregator
   dedup_fields:
     - title
   time_varying_fields:
@@ -103,7 +103,7 @@ tophub_weibo:
     - position
   schedule:
     type: interval
-    minutes: 5
+    minutes: 30
   enabled: true
 
 tophub_zhihu:
@@ -113,7 +113,7 @@ tophub_zhihu:
   aggregator_name: tophub
   aggregator_source: zhihu
   platform: zhihu
-  mongo_collection: hot_national
+  mongo_collection: aggregator
   dedup_fields:
     - title
   time_varying_fields:
@@ -121,7 +121,7 @@ tophub_zhihu:
     - position
   schedule:
     type: interval
-    minutes: 10
+    minutes: 30
   enabled: true
 
 tophub_baidu:
@@ -131,7 +131,7 @@ tophub_baidu:
   aggregator_name: tophub
   aggregator_source: baidu
   platform: baidu
-  mongo_collection: hot_national
+  mongo_collection: aggregator
   dedup_fields:
     - title
   time_varying_fields:
@@ -139,7 +139,7 @@ tophub_baidu:
     - position
   schedule:
     type: interval
-    minutes: 10
+    minutes: 30
   enabled: true
 
 tophub_douyin:
@@ -149,7 +149,7 @@ tophub_douyin:
   aggregator_name: tophub
   aggregator_source: douyin
   platform: douyin
-  mongo_collection: hot_national
+  mongo_collection: aggregator
   dedup_fields:
     - title
   time_varying_fields:
@@ -157,7 +157,7 @@ tophub_douyin:
     - position
   schedule:
     type: interval
-    minutes: 10
+    minutes: 30
   enabled: true
 
 tophub_bilibili:
@@ -167,7 +167,7 @@ tophub_bilibili:
   aggregator_name: tophub
   aggregator_source: bilibili
   platform: bilibili
-  mongo_collection: hot_national
+  mongo_collection: aggregator
   dedup_fields:
     - title
   time_varying_fields:
@@ -175,7 +175,7 @@ tophub_bilibili:
     - position
   schedule:
     type: interval
-    minutes: 15
+    minutes: 30
   enabled: true
 
 tophub_toutiao:
@@ -185,7 +185,7 @@ tophub_toutiao:
   aggregator_name: tophub
   aggregator_source: toutiao
   platform: toutiao
-  mongo_collection: hot_national
+  mongo_collection: aggregator
   dedup_fields:
     - title
   time_varying_fields:
@@ -193,7 +193,137 @@ tophub_toutiao:
     - position
   schedule:
     type: interval
-    minutes: 10
+    minutes: 30
+  enabled: false  # node_id 失效，返回 404
+
+# ============================================
+# NewsNow 聚合 (稳定)
+# ============================================
+
+newsnow_weibo:
+  display_name: 微博热搜(NewsNow)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: weibo
+  platform: weibo
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+newsnow_zhihu:
+  display_name: 知乎热榜(NewsNow)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: zhihu
+  platform: zhihu
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+newsnow_douyin:
+  display_name: 抖音热搜(NewsNow)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: douyin
+  platform: douyin
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+newsnow_baidu:
+  display_name: 百度热搜(NewsNow)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: baidu
+  platform: baidu
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+newsnow_toutiao:
+  display_name: 头条热搜(NewsNow)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: toutiao
+  platform: toutiao
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+newsnow_bilibili:
+  display_name: B站热搜(NewsNow)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: bilibili-hot-search
+  platform: bilibili
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+newsnow_tieba:
+  display_name: 贴吧热议(NewsNow)
+  category: hot_national
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: tieba
+  platform: tieba
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - hot_value
+    - position
+  schedule:
+    type: interval
+    minutes: 30
   enabled: true
 
 # ============================================
@@ -214,7 +344,7 @@ hupu_hot:
     - position
   schedule:
     type: interval
-    minutes: 15
+    minutes: 30
   enabled: true
 
 toutiao_hot:
@@ -231,7 +361,7 @@ toutiao_hot:
     - position
   schedule:
     type: interval
-    minutes: 10
+    minutes: 30
   enabled: true
 
 tencent_hot:
@@ -248,7 +378,7 @@ tencent_hot:
     - position
   schedule:
     type: interval
-    minutes: 10
+    minutes: 30
   enabled: true
 
 netease_hot:
@@ -265,7 +395,7 @@ netease_hot:
     - position
   schedule:
     type: interval
-    minutes: 10
+    minutes: 30
   enabled: true
 
 sina_hot:
@@ -282,7 +412,7 @@ sina_hot:
     - position
   schedule:
     type: interval
-    minutes: 10
+    minutes: 30
   enabled: true
 
 baidu_hot:
@@ -299,7 +429,7 @@ baidu_hot:
     - position
   schedule:
     type: interval
-    minutes: 10
+    minutes: 30
   enabled: true
 
 douyin_hot:
@@ -316,7 +446,7 @@ douyin_hot:
     - position
   schedule:
     type: interval
-    minutes: 10
+    minutes: 30
   enabled: true
 
 # ============================================
@@ -337,7 +467,7 @@ weibo_hot:
     - position
   schedule:
     type: interval
-    minutes: 5
+    minutes: 30
   enabled: false  # 需要登录 Cookie
 
 zhihu_hot:
@@ -354,7 +484,7 @@ zhihu_hot:
     - position
   schedule:
     type: interval
-    minutes: 15
+    minutes: 30
   enabled: false  # 需要登录 Cookie
 
 bilibili_hot:
@@ -371,7 +501,7 @@ bilibili_hot:
     - position
   schedule:
     type: interval
-    minutes: 15
+    minutes: 30
   enabled: false  # 需要登录 Cookie
 
 # ============================================
@@ -385,7 +515,7 @@ mofish_weibo:
   aggregator_name: mofish
   aggregator_source: weibo
   platform: weibo
-  mongo_collection: hot_national
+  mongo_collection: aggregator
   dedup_fields:
     - title
   time_varying_fields:
@@ -393,5 +523,5 @@ mofish_weibo:
     - position
   schedule:
     type: interval
-    minutes: 10
+    minutes: 30
   enabled: false  # 已废弃: DNS 失效

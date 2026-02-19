@@ -18,14 +18,19 @@
 
 ## 项目概述
 
-MindSpider是一个基于Agent技术的智能舆情爬虫系统，通过AI自动识别热点话题，并在多个社交媒体平台进行精准的内容爬取。系统采用模块化设计，能够实现从话题发现到内容收集的全自动化流程。
+MindSpider 是一个基于 AI 的智能舆情监测系统，采用**能力化事件驱动架构**，通过五个核心能力（表层采集、深层采集、信号检测、话题分析、客户过滤）协同工作，实现从热点发现到深度内容采集的全自动化流程。
 
 该部分学习借鉴github知名爬虫项目[MediaCrawler](https://github.com/NanmiCoder/MediaCrawler)
 
-两步走爬取：
+五个核心能力：
 
-- 模块一：Search Agent从包括微博、知乎、github、酷安等 **13个** 社媒平台、技术论坛识别热点新闻，并维护一个每日话题分析表。
-- 模块二：全平台爬虫深度爬取每个话题的细粒度舆情反馈。
+- **表层采集**：从 53+ 数据源（热榜、媒体、聚合器）采集表层数据，写入 MongoDB
+- **深层采集**：在 7 大社交平台进行深度内容爬取（帖子、评论、讨论）
+- **信号检测**：硬编码算法实时发现异动（热度飙升、跨平台共振、排名跃升等）
+- **话题分析**：LLM 深度分析、语义聚类、趋势研判
+- **客户过滤**：个性化相关性评分，支持品牌/地方/行业等不同客户类型
+
+这些能力通过事件驱动编排，而非固定的线性流水线。
 
 <div align="center">
 <img src="img\example.png" alt="banner" width="700">
@@ -45,16 +50,22 @@ MindSpider 运行示例
 
 ```
 MindSpider/
-├── BroadTopicExtraction/           # 话题提取模块
-│   ├── database_manager.py         # 数据库管理器
-│   ├── get_today_news.py          # 新闻采集器
-│   ├── main.py                    # 模块主入口
-│   └── topic_extractor.py         # AI话题提取器
+├── BroadTopicExtraction/           # 表层采集 + 信号检测 + 话题分析
+│   ├── aggregators/               # 8 个聚合器（tophub, newsnow, official 等）
+│   ├── spiders/                   # 15 个 Scrapy 爬虫
+│   ├── pipeline/                  # 数据管道：配置加载、MongoDB 写入、去重
+│   ├── scheduler/                 # APScheduler 定时调度
+│   ├── analyzer/                  # 信号检测 + LLM 话题分析（开发中）
+│   ├── config/                    # 数据源配置（YAML）
+│   ├── start_scheduler.py         # 调度器启动入口
+│   ├── database_manager.py        # MySQL 数据库管理器
+│   └── main.py                    # 模块主入口
 │
-├── DeepSentimentCrawling/         # 深度爬取模块
+├── DeepSentimentCrawling/         # 深层采集
 │   ├── keyword_manager.py         # 关键词管理器
 │   ├── main.py                   # 模块主入口
 │   ├── platform_crawler.py       # 平台爬虫管理器
+│   └── MediaCrawler/             # 7 平台爬虫引擎
 │   └── MediaCrawler/             # 多平台爬虫核心
 │       ├── base/                 # 基础类
 │       ├── cache/                # 缓存系统
@@ -89,94 +100,89 @@ MindSpider/
 
 ```mermaid
 flowchart TB
-    Start[开始] --> CheckConfig{检查配置}
-    CheckConfig -->|配置无效| ConfigError[配置错误<br/>请检查env中的环境变量]
-    CheckConfig -->|配置有效| InitDB[初始化数据库]
-    
-    InitDB --> BroadTopic[BroadTopicExtraction<br/>话题提取模块]
-    
-    BroadTopic --> CollectNews[收集热点新闻]
-    CollectNews --> |多平台采集| NewsSource{新闻源}
-    NewsSource --> Weibo[微博热搜]
-    NewsSource --> Zhihu[知乎热榜]
-    NewsSource --> Bilibili[B站热门]
-    NewsSource --> Toutiao[今日头条]
-    NewsSource --> Other[其他平台...]
-    
-    Weibo --> SaveNews[保存新闻到数据库]
-    Zhihu --> SaveNews
-    Bilibili --> SaveNews
-    Toutiao --> SaveNews
-    Other --> SaveNews
-    
-    SaveNews --> ExtractTopic[AI话题提取]
-    ExtractTopic --> |DeepSeek API| GenerateKeywords[生成关键词列表]
-    GenerateKeywords --> GenerateSummary[生成新闻摘要]
-    GenerateSummary --> SaveTopics[保存话题数据]
-    
-    SaveTopics --> DeepCrawl[DeepSentimentCrawling<br/>深度爬取模块]
-    
-    DeepCrawl --> LoadKeywords[加载关键词]
-    LoadKeywords --> PlatformSelect{选择爬取平台}
-    
-    PlatformSelect --> XHS[小红书爬虫]
-    PlatformSelect --> DY[抖音爬虫]
-    PlatformSelect --> KS[快手爬虫]
-    PlatformSelect --> BILI[B站爬虫]
-    PlatformSelect --> WB[微博爬虫]
-    PlatformSelect --> TB[贴吧爬虫]
-    PlatformSelect --> ZH[知乎爬虫]
-    
-    XHS --> Login{需要登录?}
-    DY --> Login
-    KS --> Login
-    BILI --> Login
-    WB --> Login
-    TB --> Login
-    ZH --> Login
-    
-    Login -->|是| QRCode[扫码登录]
-    Login -->|否| Search[关键词搜索]
-    QRCode --> Search
-    
-    Search --> CrawlContent[爬取内容]
-    CrawlContent --> ParseData[解析数据]
-    ParseData --> SaveContent[保存到数据库]
-    
-    SaveContent --> MoreKeywords{还有更多关键词?}
-    MoreKeywords -->|是| LoadKeywords
-    MoreKeywords -->|否| GenerateReport[生成爬取报告]
-    
-    GenerateReport --> End[结束]
-    
-    style Start fill:#90EE90
-    style End fill:#FFB6C1
-    style BroadTopic fill:#87CEEB,stroke:#000,stroke-width:3px
-    style DeepCrawl fill:#DDA0DD,stroke:#000,stroke-width:3px
-    style ExtractTopic fill:#FFD700
-    style ConfigError fill:#FF6347
+    subgraph Orchestration["调度与编排层"]
+        Scheduler[定时触发]
+        EventTrigger[事件触发]
+        ClientTrigger[客户触发]
+        FeedbackTrigger[反馈触发]
+    end
+
+    subgraph Capabilities["五个核心能力"]
+        Surface[表层采集<br/>53+ 数据源]
+        Deep[深层采集<br/>7 社交平台]
+        Signal[信号检测<br/>7 种算法]
+        Analysis[话题分析<br/>LLM 研判]
+        Client[客户过滤<br/>个性化推送]
+    end
+
+    subgraph Data["共享数据层"]
+        MongoDB[(MongoDB<br/>原始数据/信号/候选/指纹)]
+        MySQL[(MySQL<br/>话题/内容/任务)]
+    end
+
+    Scheduler --> Surface
+    Scheduler --> Signal
+    Scheduler --> Analysis
+    EventTrigger --> Deep
+    EventTrigger --> Analysis
+    ClientTrigger --> Deep
+    ClientTrigger --> Client
+    FeedbackTrigger --> Signal
+
+    Surface --> MongoDB
+    Deep --> MySQL
+    Signal --> MongoDB
+    Analysis --> MySQL
+
+    MongoDB --> Signal
+    MongoDB --> Analysis
+    MySQL --> Client
+
+    Deep -.->|反馈: 水面下信号| Signal
+    Analysis -.->|反馈: 指导爬取| Deep
+    Signal -.->|触发: 验证候选| Deep
+
+    style Surface fill:#87CEEB
+    style Deep fill:#DDA0DD
+    style Signal fill:#FFD700
+    style Analysis fill:#98FB98
+    style Client fill:#FFB6C1
 ```
 
 ### 工作流程说明
 
-#### 1. BroadTopicExtraction（话题提取模块）
+#### 1. 表层采集（Surface Collection）
 
-该模块负责每日热点话题的自动发现和提取：
+从 53+ 数据源持续采集表层数据，写入 MongoDB：
 
-1. **新闻采集**：从多个主流平台（微博、知乎、B站等）自动采集热点新闻
-2. **AI分析**：使用DeepSeek API对新闻进行智能分析
-3. **话题提取**：自动识别热点话题并生成相关关键词
-4. **数据存储**：将话题和关键词保存到MySQL数据库
+1. **全国热搜**：微博、百度、头条、抖音、B站等 10+ 平台热榜
+2. **垂直行业**：科技（掘金、36氪、IT之家）、财经（财联社、雪球）
+3. **传统媒体**：新华社、央视、人民日报等权威媒体
+4. **聚合平台**：今日热榜、NewsNow 等交叉验证
 
-#### 2. DeepSentimentCrawling（深度爬取模块）
+#### 2. 信号检测（Signal Detection）
 
-基于提取的话题关键词，在各大社交平台进行深度内容爬取：
+硬编码算法每 30 分钟运行，发现异动信号：
 
-1. **关键词加载**：从数据库读取当日提取的关键词
-2. **平台爬取**：使用Playwright在7大平台进行自动化爬取
-3. **内容解析**：提取帖子、评论、互动数据等
-4. **情感分析**：对爬取内容进行情感倾向分析
-5. **数据持久化**：将所有数据结构化存储到数据库
+1. **内部检测**：热度飙升（velocity）、新上榜高位（new_entry）、排名跃升（position_jump）
+2. **交叉检测**：跨平台共振（cross_platform）、权威背书（authority_boost）、垂直破圈（vertical_break）
+3. **早期预警库**：候选话题状态机（emerging → rising → confirmed）
+
+#### 3. 话题分析（Topic Analysis）
+
+LLM 每天 2 次深度分析（晨报 + 晚报）：
+
+1. **语义聚类**：合并不同平台对同一事件的不同表述
+2. **重要性评分**：综合热度、跨平台数、权威背书等多维度评分
+3. **趋势研判**：结合传播指纹库预测后续走势
+
+#### 4. 深层采集（Deep Collection）
+
+在 7 大社交平台进行深度内容爬取，由多种触发源驱动：
+
+1. **事件触发**：热点确认后全平台爬取、早期预警验证
+2. **客户触发**：品牌关键词监测、区域内容监测
+3. **反馈机制**：深层数据反馈给信号检测，发现热榜上看不到的信号
 
 ## 数据库架构
 

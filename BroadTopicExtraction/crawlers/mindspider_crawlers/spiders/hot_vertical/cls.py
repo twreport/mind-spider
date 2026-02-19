@@ -27,33 +27,31 @@ class CLSSpider(VerticalHotSpider):
     def parse(self, response: Response) -> Generator:
         """解析财联社电报页面"""
         try:
-            # 电报列表
-            items = response.css(".telegraph-item, .telegraph-content-box")
+            items = response.css(".telegraph-content-box")
 
             for rank, item in enumerate(items[:50], start=1):
-                # 电报内容
-                content = item.css(".telegraph-content::text, .content::text").get()
-                if not content:
-                    continue
+                # 标题取 <strong> 标签
+                title = item.css("strong::text").get()
+                if not title:
+                    # 无 strong 时取整段文字前50字
+                    content = item.css("div::text").get()
+                    if not content:
+                        continue
+                    title = content.strip()[:50]
+                    if len(content.strip()) > 50:
+                        title += "..."
 
-                # 标题取前50字
-                title = content.strip()[:50]
-                if len(content.strip()) > 50:
-                    title += "..."
+                # 完整内容
+                content = item.css("span.c-34304b div::text").get()
 
                 # 时间
-                time_text = item.css(".telegraph-time::text, .time::text").get()
-
-                # 链接
-                url = item.css("a::attr(href)").get()
-                if url and not url.startswith("http"):
-                    url = f"https://www.cls.cn{url}"
+                time_text = item.css(".telegraph-time-box::text").get()
 
                 yield self.make_vertical_item(
-                    title=title,
-                    url=url or "",
+                    title=title.strip(),
+                    url="",
                     position=rank,
-                    description=content.strip(),
+                    description=content.strip() if content else None,
                     category="finance",
                 )
 

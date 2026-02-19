@@ -206,7 +206,7 @@ sina_news:
   schedule:
     type: interval
     minutes: 60
-  enabled: true
+  enabled: false  # 爬虫未实现
 
 netease_news:
   display_name: 网易新闻
@@ -223,7 +223,7 @@ netease_news:
   schedule:
     type: interval
     minutes: 60
-  enabled: true
+  enabled: false  # 爬虫未实现
 
 qq_news:
   display_name: 腾讯新闻
@@ -240,7 +240,7 @@ qq_news:
   schedule:
     type: interval
     minutes: 60
-  enabled: true
+  enabled: false  # 爬虫未实现
 
 ifeng_news:
   display_name: 凤凰网
@@ -253,6 +253,44 @@ ifeng_news:
   dedup_fields:
     - title
     - url
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: false  # 爬虫未实现
+
+# ============================================
+# NewsNow 聚合 (稳定)
+# ============================================
+
+newsnow_thepaper:
+  display_name: 澎湃新闻(NewsNow)
+  category: media
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: thepaper
+  platform: thepaper
+  media_type: central
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
+  time_varying_fields: []
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: true
+
+newsnow_coolapk:
+  display_name: 酷安热榜(NewsNow)
+  category: hot_vertical
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: coolapk
+  platform: coolapk
+  vertical: tech
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
   time_varying_fields: []
   schedule:
     type: interval
@@ -271,7 +309,7 @@ rsshub_thepaper:
   aggregator_source: thepaper/newsDetail_channel_25950
   platform: thepaper
   media_type: central
-  mongo_collection: media
+  mongo_collection: aggregator
   dedup_fields:
     - title
     - publish_date
@@ -289,7 +327,7 @@ rsshub_caixin:
   aggregator_source: caixin/latest
   platform: caixin
   media_type: finance
-  mongo_collection: media
+  mongo_collection: aggregator
   dedup_fields:
     - title
     - publish_date

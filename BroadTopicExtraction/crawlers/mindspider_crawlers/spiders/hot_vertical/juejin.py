@@ -55,8 +55,10 @@ class JuejinSpider(VerticalHotSpider):
             items = data.get("data", [])
 
             for rank, item in enumerate(items, start=1):
-                article = item.get("article_info", {})
-                author = item.get("author_user_info", {})
+                # API 返回结构: data[i].item_info.article_info
+                info = item.get("item_info", item)
+                article = info.get("article_info", {})
+                author = info.get("author_user_info", {})
 
                 title = article.get("title", "")
                 if not title:

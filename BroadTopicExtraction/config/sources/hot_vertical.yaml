@@ -19,7 +19,7 @@ official_juejin:
   aggregator_source: juejin
   platform: juejin
   vertical: tech
-  mongo_collection: hot_vertical
+  mongo_collection: aggregator
   dedup_fields:
     - title
   time_varying_fields:
@@ -44,7 +44,7 @@ tophub_36kr:
   aggregator_source: 36kr
   platform: 36kr
   vertical: tech
-  mongo_collection: hot_vertical
+  mongo_collection: aggregator
   dedup_fields:
     - title
   time_varying_fields:
@@ -63,7 +63,7 @@ tophub_ithome:
   aggregator_source: ithome
   platform: ithome
   vertical: tech
-  mongo_collection: hot_vertical
+  mongo_collection: aggregator
   dedup_fields:
     - title
   time_varying_fields:
@@ -82,7 +82,7 @@ tophub_huxiu:
   aggregator_source: huxiu
   platform: huxiu
   vertical: tech
-  mongo_collection: hot_vertical
+  mongo_collection: aggregator
   dedup_fields:
     - title
   time_varying_fields:
@@ -101,7 +101,7 @@ tophub_github:
   aggregator_source: github
   platform: github
   vertical: tech
-  mongo_collection: hot_vertical
+  mongo_collection: aggregator
   dedup_fields:
     - title
     - url
@@ -111,7 +111,7 @@ tophub_github:
   schedule:
     type: interval
     minutes: 60
-  enabled: true
+  enabled: false  # node_id 已移除，TopHub 不再支持
 
 tophub_douban_movie:
   display_name: 豆瓣电影(今日热榜)
@@ -121,7 +121,7 @@ tophub_douban_movie:
   aggregator_source: douban-movie
   platform: douban
   vertical: entertainment
-  mongo_collection: hot_vertical
+  mongo_collection: aggregator
   dedup_fields:
     - title
   time_varying_fields:
@@ -130,6 +130,172 @@ tophub_douban_movie:
   schedule:
     type: interval
     minutes: 60
+  enabled: true
+
+# ============================================
+# NewsNow 聚合 - 科技/财经 (稳定)
+# ============================================
+
+newsnow_36kr:
+  display_name: 36氪(NewsNow)
+  category: hot_vertical
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: 36kr
+  platform: 36kr
+  vertical: tech
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+newsnow_ithome:
+  display_name: IT之家(NewsNow)
+  category: hot_vertical
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: ithome
+  platform: ithome
+  vertical: tech
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+newsnow_juejin:
+  display_name: 掘金(NewsNow)
+  category: hot_vertical
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: juejin
+  platform: juejin
+  vertical: tech
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+newsnow_sspai:
+  display_name: 少数派(NewsNow)
+  category: hot_vertical
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: sspai
+  platform: sspai
+  vertical: tech
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - position
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: true
+
+newsnow_v2ex:
+  display_name: V2EX(NewsNow)
+  category: hot_vertical
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: v2ex
+  platform: v2ex
+  vertical: tech
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+newsnow_github:
+  display_name: GitHub Trending(NewsNow)
+  category: hot_vertical
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: github-trending-today
+  platform: github
+  vertical: tech
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - position
+  schedule:
+    type: interval
+    minutes: 60
+  enabled: true
+
+newsnow_xueqiu:
+  display_name: 雪球热帖(NewsNow)
+  category: hot_vertical
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: xueqiu
+  platform: xueqiu
+  vertical: finance
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+newsnow_wallstreetcn:
+  display_name: 华尔街见闻(NewsNow)
+  category: hot_vertical
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: wallstreetcn
+  platform: wallstreetcn
+  vertical: finance
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - position
+  schedule:
+    type: interval
+    minutes: 30
+  enabled: true
+
+newsnow_cls:
+  display_name: 财联社热榜(NewsNow)
+  category: hot_vertical
+  source_type: aggregator
+  aggregator_name: newsnow
+  aggregator_source: cls-hot
+  platform: cls
+  vertical: finance
+  mongo_collection: aggregator
+  dedup_fields:
+    - title
+  time_varying_fields:
+    - position
+  schedule:
+    type: interval
+    minutes: 15
   enabled: true
 
 # ============================================
@@ -169,7 +335,7 @@ huxiu_scrapy:
   schedule:
     type: interval
     minutes: 30
-  enabled: true
+  enabled: false  # 阿里云 WAF 反爬，Scrapy 无法直接访问
 
 kr36_scrapy:
   display_name: 36氪快讯(直接爬取)
@@ -247,7 +413,7 @@ xueqiu_scrapy:
   schedule:
     type: interval
     minutes: 15
-  enabled: true
+  enabled: false  # 阿里云 WAF 反爬，API 需要浏览器 Cookie
 
 # ============================================
 # 需要代理/特殊处理的数据源 (默认禁用)

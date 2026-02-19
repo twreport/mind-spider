@@ -2,12 +2,13 @@
 """
 今日热榜 (tophub.today) 聚合器
 
-基于今日热榜获取各平台热搜数据
-这是目前最稳定的聚合源之一
+基于今日热榜 HTML 页面提取各平台热搜数据
+API 已下线，改为解析服务端渲染的 HTML 表格
 
 测试状态: ✅ 可用
 """
 
+import re
 from typing import Dict, List, Any
 from loguru import logger
 
@@ -15,7 +16,7 @@ from .base import BaseAggregator, AggregatorResult
 
 
 class TopHubAggregator(BaseAggregator):
-    """今日热榜聚合器 - 推荐使用"""
+    """今日热榜聚合器 - HTML 解析模式"""
 
     name = "tophub"
     display_name = "今日热榜"
@@ -23,7 +24,7 @@ class TopHubAggregator(BaseAggregator):
 
     # 节点 ID 映射 (已验证可用)
     SOURCE_MAP = {
-        # 社交媒体 - 已验证
+        # 社交媒体
         "weibo": {"node_id": "KqndgxeLl9", "name": "微博热搜"},
         "zhihu": {"node_id": "mproPpoq6O", "name": "知乎热榜"},
         "baidu": {"node_id": "Jb0vmloB1G", "name": "百度热搜"},
@@ -36,7 +37,6 @@ class TopHubAggregator(BaseAggregator):
         "huxiu": {"node_id": "5VaobgvAj1", "name": "虎嗅"},
         # 其他
         "douban-movie": {"node_id": "NKGoRAzel6", "name": "豆瓣电影"},
-        "github": {"node_id": "Wdz5zaLYo3", "name": "GitHub"},
     }
 
     def get_supported_sources(self) -> List[str]:
@@ -49,7 +49,7 @@ class TopHubAggregator(BaseAggregator):
 
     async def fetch(self, source: str, **kwargs: Any) -> AggregatorResult:
         """
-        从今日热榜 API 获取数据
+        从今日热榜 HTML 页面提取数据
 
         Args:
             source: 数据源 ID
@@ -63,80 +63,83 @@ class TopHubAggregator(BaseAggregator):
         source_info = self.SOURCE_MAP[source]
         node_id = source_info["node_id"]
 
-        # 今日热榜 API 端点
-        url = f"{self.base_url}/api/nodes/{node_id}"
+        # 使用 HTML 页面端点
+        url = f"{self.base_url}/n/{node_id}"
 
         try:
             client = await self._get_client()
-            response = await client.get(url)
+            response = await client.get(
+                url,
+                headers={"Accept": "text/html,application/xhtml+xml"},
+            )
             response.raise_for_status()
 
-            data = response.json()
+            items = self._parse_html(response.text, source)
 
-            # 检查 API 返回状态
-            if data.get("error"):
-                return self._make_error_result(source, data.get("msg", "API error"))
-
-            # 解析数据
-            items = self._parse_items(data, source)
-
-            return self._make_success_result(source, items, raw_data=data)
+            return self._make_success_result(source, items)
 
         except Exception as e:
             logger.error(f"[TopHub] 获取 {source} 失败: {e}")
             return self._make_error_result(source, str(e))
 
-    def _parse_items(self, data: Any, source: str) -> List[Dict]:
-        """解析 API 返回数据"""
+    def _parse_html(self, html: str, source: str) -> List[Dict]:
+        """解析 HTML 表格中的热搜数据"""
         items = []
 
-        # 今日热榜 API 返回格式
-        raw_items = []
-        if isinstance(data, dict):
-            raw_items = data.get("data", {}).get("items", [])
-            if not raw_items:
-                raw_items = data.get("items", [])
-        elif isinstance(data, list):
-            raw_items = data
+        # 逐个提取 <tr> 块，再从中解析排名、链接、标题
+        for tr_match in re.finditer(r'<tr[^>]*>(.*?)</tr>', html, re.S):
+            tr_content = tr_match.group(1)
 
-        for rank, item in enumerate(raw_items, start=1):
-            parsed = self._parse_single_item(item, source, rank)
-            if parsed:
-                items.append(parsed)
+            # 提取排名: <td...>1.</td>
+            rank_match = re.search(r'<td[^>]*>\s*(\d+)\.\s*</td>', tr_content)
+            if not rank_match:
+                continue
+            rank = int(rank_match.group(1))
+
+            # 提取链接和标题: <a href="..." ...>标题</a>
+            # 跳过 tophub 内部链接，只要外部链接
+            link_match = re.search(
+                r'<a\s+href="(https?://[^"]*)"[^>]*>(.*?)</a>',
+                tr_content, re.S,
+            )
+            if not link_match:
+                continue
+
+            url = link_match.group(1)
+            title_html = link_match.group(2)
+
+            # 清理标题中的 HTML 标签
+            title = re.sub(r'<[^>]+>', '', title_html).strip()
+            if not title:
+                continue
+
+            result = {
+                "title": title,
+                "url": url,
+                "position": rank,
+                "platform": source,
+            }
+
+            # 提取热度值: 通常在最后一个 <td> 中
+            tds = re.findall(r'<td[^>]*>(.*?)</td>', tr_content, re.S)
+            if len(tds) >= 3:
+                hot_text = re.sub(r'<[^>]+>', '', tds[-1]).strip()
+                if hot_text:
+                    result["hot_value"] = self._parse_hot_value(hot_text)
+
+            items.append(result)
 
         return items
 
-    def _parse_single_item(self, item: Any, source: str, rank: int) -> Dict | None:
-        """解析单条数据"""
-        if not isinstance(item, dict):
-            return None
-
-        title = item.get("title") or item.get("name")
-        if not title:
-            return None
-
-        url = item.get("url") or item.get("link") or ""
-
-        result = {
-            "title": str(title).strip(),
-            "url": url,
-            "position": rank,
-            "platform": source,
-        }
-
-        # 热度值
-        hot_value = item.get("extra", {}).get("hot") or item.get("hot")
-        if hot_value is not None:
-            try:
-                # 处理带单位的热度值 (如 "123万")
-                hot_str = str(hot_value)
-                if "万" in hot_str:
-                    result["hot_value"] = int(float(hot_str.replace("万", "")) * 10000)
-                elif "亿" in hot_str:
-                    result["hot_value"] = int(float(hot_str.replace("亿", "")) * 100000000)
-                else:
-                    result["hot_value"] = int(float(hot_str))
-            except (ValueError, TypeError):
-                pass
-
-        return result
+    def _parse_hot_value(self, value: str) -> int:
+        """解析热度值"""
+        try:
+            if "万" in value:
+                return int(float(value.replace("万", "")) * 10000)
+            elif "亿" in value:
+                return int(float(value.replace("亿", "")) * 100000000)
+            else:
+                clean = "".join(c for c in value if c.isdigit() or c == ".")
+                return int(float(clean)) if clean else 0
+        except (ValueError, TypeError):
+            return 0

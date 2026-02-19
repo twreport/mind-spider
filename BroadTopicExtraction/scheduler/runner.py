@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import re
 import subprocess
 from typing import Dict, List, Optional, Any
 from pathlib import Path
@@ -133,10 +134,29 @@ class TaskRunner:
             )
 
             if result.returncode == 0:
-                logger.info(f"[{source_name}] Scrapy 爬虫完成")
-                return {"success": True}
+                # 从 Scrapy 输出中提取爬取统计
+                item_count = self._parse_scrapy_item_count(result.stderr)
+                if item_count is not None:
+                    if item_count == 0:
+                        logger.warning(f"[{source_name}] Scrapy 爬虫完成但未爬取到数据 (item_scraped_count=0)")
+                    else:
+                        logger.info(f"[{source_name}] Scrapy 爬虫完成: 爬取 {item_count} 条")
+                else:
+                    logger.info(f"[{source_name}] Scrapy 爬虫完成 (未找到统计信息)")
+
+                # 记录 Scrapy 警告/错误（即使 returncode=0 也可能有）
+                if result.stderr:
+                    for line in result.stderr.splitlines():
+                        if "ERROR" in line:
+                            logger.error(f"[{source_name}] {line.strip()}")
+                        elif "WARNING" in line and "ScrapyDeprecationWarning" not in line and "Scrapy stats" not in line:
+                            logger.warning(f"[{source_name}] {line.strip()}")
+
+                return {"success": True, "item_count": item_count}
             else:
-                logger.error(f"[{source_name}] Scrapy 爬虫失败: {result.stderr}")
+                # 失败时记录完整的 stderr 尾部
+                stderr_tail = result.stderr[-2000:] if result.stderr else "(无输出)"
+                logger.error(f"[{source_name}] Scrapy 爬虫失败 (returncode={result.returncode}):\n{stderr_tail}")
                 return {"success": False, "error": result.stderr}
 
         except subprocess.TimeoutExpired:
@@ -145,6 +165,18 @@ class TaskRunner:
         except Exception as e:
             logger.error(f"[{source_name}] Scrapy 爬虫异常: {e}")
             return {"success": False, "error": str(e)}
+
+    def _parse_scrapy_item_count(self, stderr: str) -> Optional[int]:
+        """从 Scrapy 的 stats dump 中提取 item_scraped_count"""
+        if not stderr:
+            return None
+        match = re.search(r"'item_scraped_count':\s*(\d+)", stderr)
+        if match:
+            return int(match.group(1))
+        # Scrapy 不输出 item_scraped_count 时表示 0 条
+        if "Dumping Scrapy stats" in stderr:
+            return 0
+        return None
 
     async def run_task(self, source_name: str, config: Dict) -> Dict:
         """

@@ -25,38 +25,25 @@ class ITHomeSpider(VerticalHotSpider):
     }
 
     def parse(self, response: Response) -> Generator:
-        """解析IT之家首页"""
+        """解析IT之家首页热榜"""
         try:
-            # 热榜
-            hot_items = response.css(".hot-list li, .rank-box li, .lst li")
+            # 日榜: #rank > ul.bd.order li > a
+            hot_items = response.css("#rank ul.bd li a")
 
             for rank, item in enumerate(hot_items[:50], start=1):
-                title = item.css("a::text, .title::text").get()
+                title = item.css("::text").get()
                 if not title:
                     continue
 
-                url = item.css("a::attr(href)").get()
+                url = item.attrib.get("href", "")
                 if url and not url.startswith("http"):
                     url = f"https://www.ithome.com{url}"
 
-                # 评论数
-                comment = item.css(".comment::text, .comm::text").get()
-                hot_value = self._parse_number(comment) if comment else 0
-
                 yield self.make_vertical_item(
                     title=title.strip(),
-                    url=url or "",
+                    url=url,
                     position=rank,
-                    replies=hot_value,
                 )
 
         except Exception as e:
             self.logger.error(f"解析IT之家失败: {e}")
-
-    def _parse_number(self, text: str) -> int:
-        """解析数字"""
-        try:
-            clean = "".join(c for c in text if c.isdigit())
-            return int(clean) if clean else 0
-        except (ValueError, TypeError):
-            return 0

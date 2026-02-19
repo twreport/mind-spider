@@ -20,25 +20,26 @@ class NewsNowAggregator(BaseAggregator):
     base_url = "https://newsnow.busiyi.world"
 
     # 支持的数据源映射
+    # API 端点: /api/s?id={source_id}
     SOURCE_MAP = {
-        "weibo": {"path": "/weibo", "name": "微博热搜"},
-        "zhihu": {"path": "/zhihu", "name": "知乎热榜"},
-        "bilibili-hot-search": {"path": "/bilibili-hot-search", "name": "B站热搜"},
-        "toutiao": {"path": "/toutiao", "name": "今日头条"},
-        "douyin": {"path": "/douyin", "name": "抖音热搜"},
-        "github-trending-today": {"path": "/github-trending-today", "name": "GitHub Trending"},
-        "coolapk": {"path": "/coolapk", "name": "酷安热榜"},
-        "tieba": {"path": "/tieba", "name": "贴吧热议"},
-        "wallstreetcn": {"path": "/wallstreetcn", "name": "华尔街见闻"},
-        "thepaper": {"path": "/thepaper", "name": "澎湃新闻"},
-        "cls-hot": {"path": "/cls-hot", "name": "财联社热榜"},
-        "xueqiu": {"path": "/xueqiu", "name": "雪球热帖"},
-        "baidu": {"path": "/baidu", "name": "百度热搜"},
-        "36kr": {"path": "/36kr", "name": "36氪"},
-        "sspai": {"path": "/sspai", "name": "少数派"},
-        "ithome": {"path": "/ithome", "name": "IT之家"},
-        "juejin": {"path": "/juejin", "name": "掘金"},
-        "v2ex": {"path": "/v2ex", "name": "V2EX"},
+        "weibo": {"id": "weibo", "name": "微博热搜"},
+        "zhihu": {"id": "zhihu", "name": "知乎热榜"},
+        "bilibili-hot-search": {"id": "bilibili-hot-search", "name": "B站热搜"},
+        "toutiao": {"id": "toutiao", "name": "今日头条"},
+        "douyin": {"id": "douyin", "name": "抖音热搜"},
+        "github-trending-today": {"id": "github-trending-today", "name": "GitHub Trending"},
+        "coolapk": {"id": "coolapk", "name": "酷安热榜"},
+        "tieba": {"id": "tieba", "name": "贴吧热议"},
+        "wallstreetcn": {"id": "wallstreetcn", "name": "华尔街见闻"},
+        "thepaper": {"id": "thepaper", "name": "澎湃新闻"},
+        "cls-hot": {"id": "cls-hot", "name": "财联社热榜"},
+        "xueqiu": {"id": "xueqiu", "name": "雪球热帖"},
+        "baidu": {"id": "baidu", "name": "百度热搜"},
+        "36kr": {"id": "36kr", "name": "36氪"},
+        "sspai": {"id": "sspai", "name": "少数派"},
+        "ithome": {"id": "ithome", "name": "IT之家"},
+        "juejin": {"id": "juejin", "name": "掘金"},
+        "v2ex": {"id": "v2ex", "name": "V2EX"},
     }
 
     def get_supported_sources(self) -> List[str]:
@@ -63,7 +64,7 @@ class NewsNowAggregator(BaseAggregator):
             return self._make_error_result(source, f"不支持的数据源: {source}")
 
         source_info = self.SOURCE_MAP[source]
-        url = f"{self.base_url}{source_info['path']}"
+        url = f"{self.base_url}/api/s?id={source_info['id']}"
 
         try:
             client = await self._get_client()
@@ -94,12 +95,12 @@ class NewsNowAggregator(BaseAggregator):
         """
         items = []
 
-        # NewsNow API 返回格式: {"data": [...]} 或直接返回列表
+        # NewsNow API 返回格式: {"items": [...], "id": "...", "updatedTime": "..."}
         raw_items = []
         if isinstance(data, dict):
-            raw_items = data.get("data", [])
-            if not raw_items and "items" in data:
-                raw_items = data.get("items", [])
+            raw_items = data.get("items", [])
+            if not raw_items:
+                raw_items = data.get("data", [])
         elif isinstance(data, list):
             raw_items = data
 

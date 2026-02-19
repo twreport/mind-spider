@@ -4,6 +4,9 @@ AnyKnew 聚合器
 
 基于 AnyKnew 获取科技/互联网热榜数据
 网站: https://www.anyknew.com
+
+[已失效] API 端点返回 404，站点为纯 SPA
+保留代码供参考，但默认禁用
 """
 
 from typing import Dict, List, Any

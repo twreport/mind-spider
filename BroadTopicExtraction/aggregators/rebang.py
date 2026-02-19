@@ -4,6 +4,9 @@ Rebang 热榜聚合器
 
 基于 rebang.today 获取各平台热榜数据
 网站: https://rebang.today
+
+[已失效] 该站点为纯 SPA，无公开 API 端点
+保留代码供参考，但默认禁用
 """
 
 from typing import Dict, List, Any

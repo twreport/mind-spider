@@ -47,7 +47,7 @@ weibo_local_beijing:
   schedule:
     type: interval
     minutes: 30
-  enabled: true
+  enabled: false  # 爬虫未实现
 
 weibo_local_shanghai:
   display_name: 微博同城-上海
@@ -66,7 +66,7 @@ weibo_local_shanghai:
   schedule:
     type: interval
     minutes: 30
-  enabled: true
+  enabled: false  # 爬虫未实现
 
 weibo_local_guangzhou:
   display_name: 微博同城-广州
@@ -85,7 +85,7 @@ weibo_local_guangzhou:
   schedule:
     type: interval
     minutes: 30
-  enabled: true
+  enabled: false  # 爬虫未实现
 
 weibo_local_shenzhen:
   display_name: 微博同城-深圳
@@ -104,7 +104,7 @@ weibo_local_shenzhen:
   schedule:
     type: interval
     minutes: 30
-  enabled: true
+  enabled: false  # 爬虫未实现
 
 weibo_local_chengdu:
   display_name: 微博同城-成都
@@ -123,7 +123,7 @@ weibo_local_chengdu:
   schedule:
     type: interval
     minutes: 30
-  enabled: true
+  enabled: false  # 爬虫未实现
 
 weibo_local_hangzhou:
   display_name: 微博同城-杭州
@@ -142,7 +142,7 @@ weibo_local_hangzhou:
   schedule:
     type: interval
     minutes: 30
-  enabled: true
+  enabled: false  # 爬虫未实现
 
 # ============================================
 # 地方新闻门户
@@ -163,7 +163,7 @@ bjnews:
   schedule:
     type: interval
     minutes: 60
-  enabled: true
+  enabled: false  # 爬虫未实现
 
 thepaper_local:
   display_name: 澎湃新闻
@@ -180,7 +180,7 @@ thepaper_local:
   schedule:
     type: interval
     minutes: 60
-  enabled: true
+  enabled: false  # 爬虫未实现
 
 jiemian:
   display_name: 界面新闻
@@ -197,4 +197,4 @@ jiemian:
   schedule:
     type: interval
     minutes: 60
-  enabled: true
+  enabled: false  # 爬虫未实现

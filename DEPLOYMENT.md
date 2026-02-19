@@ -132,7 +132,7 @@ MAX_CONCURRENCY_NUM = 3
 
 ## 六、爬虫状态汇总
 
-### 阶段 1.1 数据采集（已完成）
+### 表层采集（已完成）
 
 **Hot National (10 个)**:
 - ✅ weibo_hot, douyin_hot, baidu_hot, zhihu_hot, bilibili_hot

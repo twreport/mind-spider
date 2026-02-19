@@ -28,11 +28,6 @@ class OfficialAPIAggregator(BaseAggregator):
             "url": "https://top.baidu.com/api/board?platform=wise&tab=realtime",
             "method": "GET",
         },
-        "douyin": {
-            "name": "抖音热搜",
-            "url": "https://www.douyin.com/aweme/v1/web/hot/search/list/",
-            "method": "GET",
-        },
         "tieba": {
             "name": "贴吧热议",
             "url": "https://tieba.baidu.com/hottopic/browse/topicList",
@@ -97,8 +92,6 @@ class OfficialAPIAggregator(BaseAggregator):
         """根据数据源解析数据"""
         if source == "baidu":
             return self._parse_baidu(data)
-        elif source == "douyin":
-            return self._parse_douyin(data)
         elif source == "tieba":
             return self._parse_tieba(data)
         elif source == "juejin":
@@ -113,7 +106,11 @@ class OfficialAPIAggregator(BaseAggregator):
         raw_items = data.get("data", {}).get("cards", [])
 
         if raw_items and len(raw_items) > 0:
-            content = raw_items[0].get("content", [])
+            # 百度 API 结构: cards[0].content[0].content (三层嵌套)
+            content_wrapper = raw_items[0].get("content", [])
+            content = []
+            if content_wrapper and isinstance(content_wrapper[0], dict):
+                content = content_wrapper[0].get("content", [])
             for rank, item in enumerate(content, start=1):
                 title = item.get("word") or item.get("query")
                 if not title:
@@ -127,26 +124,6 @@ class OfficialAPIAggregator(BaseAggregator):
                     "hot_value": item.get("hotScore", 0),
                     "description": item.get("desc", ""),
                 })
-
-        return items
-
-    def _parse_douyin(self, data: Any) -> List[Dict]:
-        """解析抖音热搜"""
-        items = []
-        raw_items = data.get("data", {}).get("word_list", [])
-
-        for rank, item in enumerate(raw_items, start=1):
-            title = item.get("word")
-            if not title:
-                continue
-
-            items.append({
-                "title": title,
-                "url": f"https://www.douyin.com/search/{title}",
-                "position": rank,
-                "platform": "douyin",
-                "hot_value": item.get("hot_value", 0),
-            })
 
         return items
 
@@ -176,8 +153,10 @@ class OfficialAPIAggregator(BaseAggregator):
         raw_items = data.get("data", [])
 
         for rank, item in enumerate(raw_items, start=1):
-            article = item.get("article_info", {})
-            author = item.get("author_user_info", {})
+            # 掘金 API 结构: data[].item_info.article_info
+            item_info = item.get("item_info", {})
+            article = item_info.get("article_info", {})
+            author = item_info.get("author_user_info", {})
 
             title = article.get("title")
             if not title:

@@ -6,6 +6,7 @@ MindSpider 调度器
 """
 
 import asyncio
+import inspect
 from typing import Dict, List, Optional, Callable, Any
 from datetime import datetime
 
@@ -136,7 +137,10 @@ class MindSpiderScheduler:
 
         if schedule_type == "interval":
             minutes = schedule.get("minutes", 30)
-            return IntervalTrigger(minutes=minutes)
+            # jitter: 随机偏移，避免所有任务在整点同时触发
+            # 偏移范围为间隔的 1/6，例如 30 分钟间隔 → ±5 分钟随机偏移
+            jitter = minutes * 10  # 单位: 秒
+            return IntervalTrigger(minutes=minutes, jitter=jitter)
         elif schedule_type == "cron":
             return CronTrigger(
                 hour=schedule.get("hour", 0),
@@ -172,7 +176,9 @@ class MindSpiderScheduler:
             if asyncio.iscoroutinefunction(handler):
                 await handler(source_name, config)
             else:
-                handler(source_name, config)
+                result = handler(source_name, config)
+                if inspect.isawaitable(result):
+                    await result
 
             elapsed = (datetime.now() - start_time).total_seconds()
             logger.info(f"[Scheduler] {source_name} 完成，耗时 {elapsed:.2f}s")
