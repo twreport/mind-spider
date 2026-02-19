@@ -1,0 +1,27 @@
+[Unit]
+Description=MindSpider Data Collection Scheduler
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+Type=simple
+User=%USER%
+WorkingDirectory=%PROJECT_DIR%
+ExecStart=%PYTHON_BIN% BroadTopicExtraction/start_scheduler.py
+Restart=on-failure
+RestartSec=10
+
+# 环境变量
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=%PROJECT_DIR%/.env
+
+# 日志输出到 journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mindspider-scheduler
+
+# 资源限制
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
