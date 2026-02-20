@@ -2,7 +2,9 @@
 """
 MindSpider 调度器
 
-基于 APScheduler 实现定时任务调度
+基于 APScheduler 实现定时任务调度。
+每个信源爬完后自动触发 Layer 1 信号检测，
+跨平台检测（Layer 2）独立定时运行。
 """
 
 import asyncio
@@ -21,7 +23,12 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from pipeline import ConfigLoader
+from analyzer.data_reader import DataReader
+from analyzer.signal_detector import SignalDetector
+from pipeline.mongo_writer import MongoWriter
+from config import settings
 
 
 class MindSpiderScheduler:
@@ -49,6 +56,15 @@ class MindSpiderScheduler:
 
         self._job_handlers: Dict[str, Callable] = {}
         self._setup_listeners()
+
+        # 信号检测器（共享连接）
+        self._raw_mongo = MongoWriter()
+        self._signal_mongo = MongoWriter(db_name=settings.MONGO_SIGNAL_DB_NAME)
+        self._data_reader = DataReader(mongo_writer=self._raw_mongo)
+        self._detector = SignalDetector(
+            data_reader=self._data_reader,
+            signal_writer=self._signal_mongo,
+        )
 
     def _setup_listeners(self) -> None:
         """设置事件监听器"""
@@ -121,7 +137,30 @@ class MindSpiderScheduler:
                 f"({config.get('display_name', '')}) - {schedule}"
             )
 
+        # 添加跨平台信号检测定时任务
+        if job_count > 0:
+            self._setup_cross_platform_job()
+
         return job_count
+
+    def _setup_cross_platform_job(self) -> None:
+        """添加跨平台信号检测定时任务（每 30 分钟）"""
+        self.scheduler.add_job(
+            self._run_cross_platform_detection,
+            IntervalTrigger(minutes=30),
+            id="signal_cross_platform",
+            name="跨平台信号检测",
+            replace_existing=True,
+        )
+        logger.info("[Scheduler] 添加跨平台信号检测任务 (每 30 分钟)")
+
+    async def _run_cross_platform_detection(self) -> None:
+        """执行跨平台信号检测"""
+        try:
+            signals = self._detector.detect_cross_platform()
+            logger.info(f"[Signal] 跨平台检测完成: {len(signals)} 个信号")
+        except Exception as e:
+            logger.error(f"[Signal] 跨平台检测失败: {e}")
 
     def _create_trigger(self, schedule: Dict) -> Optional[IntervalTrigger | CronTrigger]:
         """
@@ -152,7 +191,7 @@ class MindSpiderScheduler:
 
     async def _run_source(self, source_name: str) -> None:
         """
-        运行指定数据源的采集任务
+        运行指定数据源的采集任务，完成后触发 Layer 1 信号检测
 
         Args:
             source_name: 数据源名称
@@ -174,18 +213,34 @@ class MindSpiderScheduler:
 
         try:
             if asyncio.iscoroutinefunction(handler):
-                await handler(source_name, config)
+                result = await handler(source_name, config)
             else:
                 result = handler(source_name, config)
                 if inspect.isawaitable(result):
-                    await result
+                    result = await result
 
             elapsed = (datetime.now() - start_time).total_seconds()
             logger.info(f"[Scheduler] {source_name} 完成，耗时 {elapsed:.2f}s")
 
+            # 采集成功后触发 Layer 1 信号检测
+            success = result.get("success", False) if isinstance(result, dict) else True
+            collection = config.get("mongo_collection", "")
+            if success and collection:
+                self._run_signal_detection(source_name, collection)
+
         except Exception as e:
             logger.error(f"[Scheduler] {source_name} 执行失败: {e}")
             raise
+
+    def _run_signal_detection(self, source_name: str, collection: str) -> None:
+        """采集完成后触发 Layer 1 信号检测"""
+        try:
+            signals = self._detector.detect_for_source(source_name, collection)
+            if signals:
+                logger.info(f"[Signal] {source_name}: {len(signals)} 个 Layer 1 信号")
+        except Exception as e:
+            # 信号检测失败不应影响采集流程
+            logger.error(f"[Signal] {source_name} 检测失败: {e}")
 
     def add_job(
         self,
@@ -254,6 +309,9 @@ class MindSpiderScheduler:
         if self.scheduler.running:
             self.scheduler.shutdown(wait=wait)
             logger.info("[Scheduler] 调度器已关闭")
+        # 关闭信号检测的 MongoDB 连接
+        self._raw_mongo.close()
+        self._signal_mongo.close()
 
     async def run_once(self, source_name: str) -> None:
         """立即执行一次指定任务"""
