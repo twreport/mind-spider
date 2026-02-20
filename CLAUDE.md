@@ -6,13 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MindSpider is an AI-powered sentiment monitoring system for Chinese social media platforms. It adopts a **capability-based, event-driven architecture** with five core capabilities that can be independently triggered and interconnected through feedback loops:
 
-### Five Core Capabilities
+### Six Core Capabilities
 
 | 能力 | 代码位置 | 职责 |
 |------|---------|------|
 | 表层采集 (Surface Collection) | `BroadTopicExtraction/` | 爬热榜、媒体、聚合器，写入 MongoDB |
+| 信号检测 (Signal Detection) | `BroadTopicExtraction/analyzer/` | 硬编码算法发现异动，输出信号 |
+| 候选话题管理 (Candidate Management) | `BroadTopicExtraction/analyzer/` | 话题生命周期状态机，触发决策 |
 | 深层采集 (Deep Collection) | `DeepSentimentCrawling/` | 爬 7 个社交平台的详细内容（帖子、评论） |
-| 信号检测 (Signal Detection) | `BroadTopicExtraction/analyzer/` | 硬编码算法发现异动，维护早期预警库 |
 | 话题分析 (Topic Analysis) | `BroadTopicExtraction/analyzer/` | LLM 深度分析、聚类、研判 |
 | 客户过滤 (Client Filtering) | 待实现 | 个性化相关性评分、推送 |
 
@@ -23,7 +24,8 @@ These capabilities are NOT sequential steps — they are services triggered by m
 | 能力 | 状态 | 说明 |
 |------|------|------|
 | 表层采集 | ✅ 已完成 | 8 个聚合器，15 个爬虫，53 个数据源 |
-| 信号检测 | 🚧 开发中 | 7 种信号类型，早期预警库 |
+| 信号检测 | 🚧 开发中 | 7 种信号类型 |
+| 候选话题管理 | 🚧 开发中 | 状态机（emerging/rising/confirmed/exploded/tracking/closed） |
 | 话题分析 | 🚧 开发中 | LLM 晨报/晚报，语义聚类 |
 | 深层采集 | 📋 计划中 | 7 平台详细内容爬取，多触发源 |
 | 客户过滤 | 📋 计划中 | 兴趣画像，相关性评分 |
@@ -100,30 +102,33 @@ uv run pre-commit run --all-files
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                  调度与编排层                          │
-│         （事件驱动，管理触发、优先级、反馈）             │
-└──────┬──────┬──────┬──────┬──────┬────────────────────┘
-       │      │      │      │      │
-       ▼      ▼      ▼      ▼      ▼
-  ┌──────┐┌──────┐┌──────┐┌──────┐┌──────┐
-  │ 表层 ││ 深层 ││ 信号 ││ 话题 ││ 客户 │
-  │ 采集 ││ 采集 ││ 检测 ││ 分析 ││ 过滤 │
-  └──┬───┘└──┬───┘└──┬───┘└──┬───┘└──┬───┘
-     └───────┴───────┴───────┴───────┘
-                     │
-                     ▼
-            ┌────────────────┐
-            │   共享数据层     │
-            │ MongoDB + MySQL │
-            └────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                       调度与编排层                                  │
+│            （事件驱动，管理触发、优先级、反馈）                       │
+└──┬──────┬──────┬──────┬──────┬──────┬────────────────────────────┘
+   │      │      │      │      │      │
+   ▼      ▼      ▼      ▼      ▼      ▼
+┌──────┐┌──────┐┌──────┐┌──────┐┌──────┐┌──────┐
+│ 表层 ││ 信号 ││ 候选 ││ 深层 ││ 话题 ││ 客户 │
+│ 采集 ││ 检测 ││ 管理 ││ 采集 ││ 分析 ││ 过滤 │
+└──┬───┘└──┬───┘└──┬───┘└──┬───┘└──┬───┘└──┬───┘
+   └───────┴───────┴───────┴───────┴───────┘
+                        │
+                        ▼
+               ┌────────────────┐
+               │   共享数据层     │
+               │ MongoDB + MySQL │
+               └────────────────┘
 ```
 
-Capabilities communicate through shared data (MongoDB collections, MySQL tables) and are connected by feedback loops:
-- Deep collection results feed back to signal detection (discover signals not visible on hot lists)
-- Topic analysis triggers deep collection (LLM identifies topics needing deeper investigation)
-- Signal detection triggers deep collection (validate early warning candidates)
-- Fingerprint library feeds back to signal detection (adaptive thresholds)
+Capabilities communicate through shared data (MongoDB collections, MySQL tables) and are connected by seven feedback loops:
+- Signal detection → Candidate management (new signals trigger state transitions)
+- Candidate management → Deep collection (state changes trigger crawling at different scales)
+- Deep collection → Signal detection (discover signals not visible on hot lists)
+- Deep collection → Candidate management (validate early warning candidates)
+- Topic analysis → Candidate management (LLM upgrades/downgrades candidate status)
+- Topic analysis → Deep collection (LLM identifies topics needing deeper investigation)
+- Fingerprint library → Signal detection (adaptive thresholds)
 
 ### Key Entry Points
 - `main.py` - Root orchestrator (`MindSpider` class)
@@ -174,7 +179,7 @@ Capabilities communicate through shared data (MongoDB collections, MySQL tables)
 ### 优点
 
 **1. 能力化事件驱动架构**
-- 五个核心能力（表层采集、深层采集、信号检测、话题分析、客户过滤）平等并行
+- 六个核心能力（表层采集、信号检测、候选话题管理、深层采集、话题分析、客户过滤）平等并行
 - 多触发源（定时/事件/客户/反馈）动态编排，而非固定流水线
 - 反馈环机制：深层数据反哺信号检测，LLM 指导爬取方向
 

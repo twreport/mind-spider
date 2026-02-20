@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     # MongoDB 配置 (用于原始数据存储)
     MONGO_URI: str = Field("mongodb://10.168.1.80:27018", description="MongoDB 连接 URI")
     MONGO_DB_NAME: str = Field("mindspider_raw", description="MongoDB 数据库名称，用于存储原始爬取数据")
+    MONGO_SIGNAL_DB_NAME: str = Field("mindspider_signal", description="MongoDB 信号库，存储信号检测、候选管理等衍生数据")
 
     # AI API 配置
     MINDSPIDER_API_KEY: Optional[str] = Field(None, description="MINDSPIDER API密钥")
