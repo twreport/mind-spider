@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from pipeline import ConfigLoader
 from analyzer.data_reader import DataReader
 from analyzer.signal_detector import SignalDetector
+from analyzer.candidate_manager import CandidateManager
 from pipeline.mongo_writer import MongoWriter
 from config import settings
 
@@ -63,6 +64,9 @@ class MindSpiderScheduler:
         self._data_reader = DataReader(mongo_writer=self._raw_mongo)
         self._detector = SignalDetector(
             data_reader=self._data_reader,
+            signal_writer=self._signal_mongo,
+        )
+        self._candidate_manager = CandidateManager(
             signal_writer=self._signal_mongo,
         )
 
@@ -155,12 +159,19 @@ class MindSpiderScheduler:
         logger.info("[Scheduler] 添加跨平台信号检测任务 (每 30 分钟)")
 
     async def _run_cross_platform_detection(self) -> None:
-        """执行跨平台信号检测"""
+        """执行跨平台信号检测，然后运行候选管理"""
         try:
             signals = self._detector.detect_cross_platform()
             logger.info(f"[Signal] 跨平台检测完成: {len(signals)} 个信号")
         except Exception as e:
             logger.error(f"[Signal] 跨平台检测失败: {e}")
+
+        # 候选管理：消费所有信号 → 状态机评估
+        try:
+            stats = self._candidate_manager.run_cycle()
+            logger.info(f"[Candidate] 候选管理完成: {stats}")
+        except Exception as e:
+            logger.error(f"[Candidate] 候选管理失败: {e}")
 
     def _create_trigger(self, schedule: Dict) -> Optional[IntervalTrigger | CronTrigger]:
         """

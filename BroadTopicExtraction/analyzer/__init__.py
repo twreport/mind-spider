@@ -9,5 +9,6 @@
 
 from BroadTopicExtraction.analyzer.data_reader import DataReader
 from BroadTopicExtraction.analyzer.signal_detector import SignalDetector
+from BroadTopicExtraction.analyzer.candidate_manager import CandidateManager
 
-__all__ = ["DataReader", "SignalDetector"]
+__all__ = ["DataReader", "SignalDetector", "CandidateManager"]
