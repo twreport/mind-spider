@@ -15,6 +15,7 @@ ENV_FILE: str = str(CWD_ENV if CWD_ENV.exists() else (PROJECT_ROOT / ".env"))
 
 class Settings(BaseSettings):
     """全局配置管理，优先从环境变量和.env加载。支持MySQL/PostgreSQL统一数据库参数命名。"""
+    # MySQL/PostgreSQL 配置
     DB_DIALECT: str = Field("mysql", description="数据库类型，支持'mysql'或'postgresql'")
     DB_HOST: str = Field("your_host", description="数据库主机名或IP地址")
     DB_PORT: int = Field(3306, description="数据库端口号")

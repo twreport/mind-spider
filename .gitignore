@@ -108,7 +108,6 @@ exports/
 reports/
 
 # Config files with secrets
-config.py
 .env
 .env.*
 !.env.example
