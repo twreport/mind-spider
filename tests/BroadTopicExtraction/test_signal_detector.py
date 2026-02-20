@@ -317,3 +317,108 @@ class TestSignalDetector:
         assert count_after < count_before * 1.5, (
             f"upsert 失效？before={count_before}, after={count_after}"
         )
+
+
+# ==================== detect_for_source 测试 ====================
+
+
+class TestDetectForSource:
+    """测试单信源 Layer 1 检测"""
+
+    @pytest.fixture(scope="class")
+    def source_result(self, mongo, signal_mongo):
+        reader = DataReader(mongo_writer=mongo)
+        detector = SignalDetector(
+            data_reader=reader,
+            signal_writer=signal_mongo,
+            thresholds={
+                "velocity_growth_rate": 0.05,
+                "velocity_min_hot_value": 1000,
+                "new_entry_max_age": LOOKBACK,
+                "new_entry_min_hot_value": 10000,
+                "new_entry_max_position": 20,
+                "position_jump_min": 3,
+            },
+        )
+        since = int(time.time()) - LOOKBACK
+        signals = detector.detect_for_source("baidu_hot", "hot_national", since_ts=since)
+        yield signals
+
+        # 清理
+        if signals:
+            col = signal_mongo.get_collection("signals")
+            col.delete_many({"signal_id": {"$in": [s["signal_id"] for s in signals]}})
+            print(f"\n[cleanup] 删除 {len(signals)} 条 detect_for_source 测试信号")
+
+    def test_returns_list(self, source_result):
+        assert isinstance(source_result, list)
+
+    def test_only_layer1(self, source_result):
+        """detect_for_source 不应产生 cross_platform 信号"""
+        for s in source_result:
+            assert s["signal_type"] in ("velocity", "new_entry", "position_jump"), (
+                f"不应有 {s['signal_type']} 信号"
+            )
+            assert s["layer"] == 1
+
+    def test_signals_from_correct_source(self, source_result, mongo):
+        """信号应来自指定信源的数据"""
+        # baidu_hot 的 platform 是 baidu
+        for s in source_result:
+            assert s["platform"] == "baidu", f"平台应为 baidu，实际: {s['platform']}"
+
+    def test_has_history(self, source_result):
+        for s in source_result:
+            assert "hot_value_history" in s
+            assert "position_history" in s
+
+
+# ==================== detect_cross_platform 测试 ====================
+
+
+class TestDetectCrossPlatform:
+    """测试独立跨平台检测"""
+
+    @pytest.fixture(scope="class")
+    def cross_result(self, mongo, signal_mongo):
+        reader = DataReader(mongo_writer=mongo)
+        detector = SignalDetector(
+            data_reader=reader,
+            signal_writer=signal_mongo,
+            thresholds={
+                "cross_platform_min_keywords": 2,
+                "cross_platform_min_platforms": 2,
+            },
+        )
+        since = int(time.time()) - LOOKBACK
+        signals = detector.detect_cross_platform(since_ts=since)
+        yield signals
+
+        # 清理
+        if signals:
+            col = signal_mongo.get_collection("signals")
+            col.delete_many({"signal_id": {"$in": [s["signal_id"] for s in signals]}})
+            print(f"\n[cleanup] 删除 {len(signals)} 条 cross_platform 测试信号")
+
+    def test_returns_list(self, cross_result):
+        assert isinstance(cross_result, list)
+
+    def test_only_cross_platform(self, cross_result):
+        """detect_cross_platform 只应产生 cross_platform 信号"""
+        assert len(cross_result) > 0, "应有跨平台信号"
+        for s in cross_result:
+            assert s["signal_type"] == "cross_platform"
+            assert s["layer"] == 2
+
+    def test_multiple_platforms(self, cross_result):
+        for s in cross_result:
+            assert len(s["platforms"]) >= 2
+            assert s["platform"] is None
+
+    def test_has_platform_items(self, cross_result):
+        for s in cross_result:
+            items = s["details"].get("platform_items", {})
+            assert len(items) >= 2
+            for plat, info in items.items():
+                assert "title" in info
+                assert "hot_value_history" in info
