@@ -80,41 +80,26 @@ class SignalDetector:
         self.thresholds = {**DEFAULT_THRESHOLDS, **(thresholds or {})}
 
     def detect(self, since_ts: Optional[int] = None) -> list[dict]:
-        """执行一次完整检测，返回所有发现的信号"""
+        """执行一次完整检测（Layer 1 + Layer 2），返回所有发现的信号
+
+        适用于手动触发或定时全量检测。生产环境建议用
+        detect_for_source() + detect_cross_platform() 分开调用。
+        """
         since_ts = since_ts or int(time.time()) - 3600
-        signals: list[dict] = []
 
-        # Layer 1: 单条目异动 — hot_national + hot_vertical
-        for collection, getter in (
-            ("hot_national", self.data_reader.get_hot_national),
-            ("hot_vertical", self.data_reader.get_hot_vertical),
-        ):
-            items = getter(since_ts)
-            signals += self._detect_velocity(items, collection)
-            signals += self._detect_new_entry(items, collection)
-            signals += self._detect_position_jump(items, collection)
+        signals = self._detect_layer1_all(since_ts)
+        signals += self.detect_cross_platform(since_ts)
 
-        # Layer 2: 跨平台共振
-        all_items = self.data_reader.get_all_hot_items(since_ts)
-        signals += self._detect_cross_platform(all_items)
-
-        logger.info(f"信号检测完成: 共 {len(signals)} 个信号")
-        for s in signals:
-            logger.debug(f"  [{s['signal_type']}] {s['title']}")
-
-        # 写入 MongoDB
-        if signals:
-            self._write_signals(signals)
+        logger.info(f"全量信号检测完成: 共 {len(signals)} 个信号")
 
         return signals
 
     def detect_for_source(
         self, source: str, source_collection: str, since_ts: Optional[int] = None
     ) -> list[dict]:
-        """单信源检测：每爬完一个信源后调用
+        """单信源 Layer 1 检测：每爬完一个信源后调用
 
-        Layer 1: 只检测该信源的数据（velocity / new_entry / position_jump）
-        Layer 2: 跨平台检测仍用全量数据，但归一化平台名避免同平台重复计数
+        只跑 velocity / new_entry / position_jump，不跑跨平台。
 
         Args:
             source: 信源名称，如 "baidu_hot", "tophub_weibo"
@@ -123,20 +108,51 @@ class SignalDetector:
         since_ts = since_ts or int(time.time()) - 3600
         signals: list[dict] = []
 
-        # Layer 1: 只检测本信源的数据
         items = self.data_reader.get_items_by_source(source_collection, source, since_ts)
         if items:
             signals += self._detect_velocity(items, source_collection)
             signals += self._detect_new_entry(items, source_collection)
             signals += self._detect_position_jump(items, source_collection)
 
-        # Layer 2: 跨平台用全量数据
-        all_items = self.data_reader.get_all_hot_items(since_ts)
-        signals += self._detect_cross_platform(all_items)
-
-        logger.info(f"信号检测 [{source}] 完成: 共 {len(signals)} 个信号")
+        logger.info(f"信号检测 [{source}] Layer 1: {len(signals)} 个信号")
         for s in signals:
             logger.debug(f"  [{s['signal_type']}] {s['title']}")
+
+        if signals:
+            self._write_signals(signals)
+
+        return signals
+
+    def detect_cross_platform(self, since_ts: Optional[int] = None) -> list[dict]:
+        """跨平台共振检测（Layer 2）
+
+        独立调用，适合在一轮采集全部完成后跑一次，或独立定时（如每 30 分钟）。
+        """
+        since_ts = since_ts or int(time.time()) - 3600
+
+        all_items = self.data_reader.get_all_hot_items(since_ts)
+        signals = self._detect_cross_platform(all_items)
+
+        logger.info(f"跨平台信号检测: {len(signals)} 个信号")
+        for s in signals:
+            logger.debug(f"  [{s['signal_type']}] {s['title']}")
+
+        if signals:
+            self._write_signals(signals)
+
+        return signals
+
+    def _detect_layer1_all(self, since_ts: int) -> list[dict]:
+        """对 hot_national + hot_vertical 全量跑 Layer 1"""
+        signals: list[dict] = []
+        for collection, getter in (
+            ("hot_national", self.data_reader.get_hot_national),
+            ("hot_vertical", self.data_reader.get_hot_vertical),
+        ):
+            items = getter(since_ts)
+            signals += self._detect_velocity(items, collection)
+            signals += self._detect_new_entry(items, collection)
+            signals += self._detect_position_jump(items, collection)
 
         if signals:
             self._write_signals(signals)
