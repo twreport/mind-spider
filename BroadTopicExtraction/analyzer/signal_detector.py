@@ -441,6 +441,8 @@ class SignalDetector:
         """
         title = title_override or (item.get("title", "") if item else "")
         platform = (item.get("platform", "") if item else None) if not platforms else None
+        if platform:
+            platform = _normalize_platform(platform)
         title_hash = hashlib.md5(title.encode("utf-8")).hexdigest()[:12]
         layer = 2 if signal_type == "cross_platform" else 1
 

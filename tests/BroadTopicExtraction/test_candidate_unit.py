@@ -24,7 +24,7 @@ from BroadTopicExtraction.analyzer.candidate_manager import (
 
 def _make_position_jump_signal(
     title="崩坏星穹铁道2.8前瞻",
-    platform="bilibili-hot-search",
+    platform="bilibili",
     prev_pos=25,
     curr_pos=15,
     jump=10,
@@ -314,7 +314,7 @@ class TestUpdateCandidateRealData:
         cand = manager._create_candidate(_make_cross_platform_signal(), now)
         sig2 = _make_position_jump_signal(
             title="谷歌推出Gemini 3.1 Pro最新消息",
-            platform="bilibili-hot-search",
+            platform="bilibili",
         )
         manager._update_candidate(cand, sig2, now)
 
