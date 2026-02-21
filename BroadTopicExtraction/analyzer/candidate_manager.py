@@ -18,7 +18,7 @@ from typing import Optional
 from loguru import logger
 from pymongo import UpdateOne
 
-from BroadTopicExtraction.analyzer.signal_detector import _extract_keywords
+from BroadTopicExtraction.analyzer.signal_detector import _extract_keywords, _normalize_platform
 from BroadTopicExtraction.pipeline.mongo_writer import MongoWriter
 
 import sys
@@ -194,12 +194,13 @@ class CandidateManager:
                 if t and t != title:
                     source_titles.append(t)
 
-        # 平台列表
+        # 平台列表（归一化）
         if signal.get("signal_type") == "cross_platform":
-            platforms = signal.get("platforms", [])
+            platforms = [_normalize_platform(p) for p in signal.get("platforms", [])]
         else:
             plat = signal.get("platform")
-            platforms = [plat] if plat else []
+            platforms = [_normalize_platform(plat)] if plat else []
+        platforms = sorted(set(platforms))
 
         return {
             "candidate_id": f"cand_{title_hash}",
@@ -229,12 +230,12 @@ class CandidateManager:
                 if t and t not in candidate["source_titles"]:
                     candidate["source_titles"].append(t)
 
-        # 合并平台
+        # 合并平台（归一化）
         if signal.get("signal_type") == "cross_platform":
-            new_plats = signal.get("platforms", [])
+            new_plats = [_normalize_platform(p) for p in signal.get("platforms", [])]
         else:
             plat = signal.get("platform")
-            new_plats = [plat] if plat else []
+            new_plats = [_normalize_platform(plat)] if plat else []
         for p in new_plats:
             if p not in candidate["platforms"]:
                 candidate["platforms"].append(p)

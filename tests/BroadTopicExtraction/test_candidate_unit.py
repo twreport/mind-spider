@@ -292,7 +292,7 @@ class TestCreateCandidateRealData:
         cand = manager._create_candidate(sig, now)
 
         assert cand["status"] == "emerging"
-        assert cand["platforms"] == ["bilibili-hot-search"]
+        assert cand["platforms"] == ["bilibili"]
         assert len(cand["source_titles"]) == 1
         assert cand["status_history"][0]["reason"] == "position_jump signal"
 
@@ -318,7 +318,7 @@ class TestUpdateCandidateRealData:
         )
         manager._update_candidate(cand, sig2, now)
 
-        assert "bilibili-hot-search" in cand["platforms"]
+        assert "bilibili" in cand["platforms"]
         assert cand["platform_count"] == 4
         assert "谷歌推出Gemini 3.1 Pro最新消息" in cand["source_titles"]
 
