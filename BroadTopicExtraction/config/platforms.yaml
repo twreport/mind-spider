@@ -225,7 +225,7 @@ huxiu:
     max_delay: 5
     max_concurrency: 5
 
-kr36:
+36kr:
   name: 36氪
   type: tech
   weight: 0.2
