@@ -12,13 +12,14 @@ from typing import Optional
 
 from loguru import logger
 
-# 确保 MediaCrawler 在 sys.path 中
-_MC_ROOT = Path(__file__).parent / "MediaCrawler"
-if str(_MC_ROOT) not in sys.path:
-    sys.path.insert(0, str(_MC_ROOT))
-
-# 项目根目录
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# 项目根必须在 MediaCrawler 之前，否则 config 会解析到 MediaCrawler/config
+_PROJECT_ROOT = str(Path(__file__).parent.parent)
+_MC_ROOT = str(Path(__file__).parent / "MediaCrawler")
+for p in [_MC_ROOT, _PROJECT_ROOT]:
+    if p in sys.path:
+        sys.path.remove(p)
+sys.path.insert(0, _MC_ROOT)
+sys.path.insert(0, _PROJECT_ROOT)
 
 from DeepSentimentCrawling.cookie_manager import CookieManager
 from DeepSentimentCrawling.alert import alert_cookie_expired

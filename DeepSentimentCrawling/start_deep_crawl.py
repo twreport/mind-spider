@@ -17,8 +17,15 @@ from loguru import logger
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent / "MediaCrawler"))
+# 项目根目录必须在 MediaCrawler 之前，否则 `from config import settings` 会命中 MediaCrawler 的 config 包
+_PROJECT_ROOT = str(Path(__file__).parent.parent)
+_MC_ROOT = str(Path(__file__).parent / "MediaCrawler")
+# 去掉已有的再按顺序插入，确保项目根在前
+for p in [_MC_ROOT, _PROJECT_ROOT]:
+    if p in sys.path:
+        sys.path.remove(p)
+sys.path.insert(0, _MC_ROOT)
+sys.path.insert(0, _PROJECT_ROOT)
 
 from config import settings
 from DeepSentimentCrawling.cookie_manager import CookieManager

@@ -15,7 +15,9 @@ from playwright.async_api import BrowserContext
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+_PROJECT_ROOT = str(Path(__file__).parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 from config import settings
 
 from BroadTopicExtraction.pipeline.mongo_writer import MongoWriter
