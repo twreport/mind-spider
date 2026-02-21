@@ -33,7 +33,7 @@ from BroadTopicExtraction.analyzer.candidate_manager import (
     CRAWL_TASKS_COLLECTION,
 )
 from BroadTopicExtraction.pipeline.mongo_writer import MongoWriter
-from config import settings
+from ms_config import settings
 
 # 测试标记：需要真实 MongoDB
 pytestmark = pytest.mark.skipif(
@@ -311,7 +311,7 @@ class TestFullExecution:
     async def _verify_mysql_data(self, task):
         """验证 MySQL 中的数据包含 topic_id 和 crawling_task_id"""
         import aiomysql
-        from config import settings as root_settings
+        from ms_config import settings as root_settings
 
         # 根据数据库类型选择连接方式
         if root_settings.DB_DIALECT == "postgresql":

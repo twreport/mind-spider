@@ -17,17 +17,15 @@ from loguru import logger
 import sys
 from pathlib import Path
 
-# 项目根目录必须在 MediaCrawler 之前，否则 `from config import settings` 会命中 MediaCrawler 的 config 包
+# sys.path: MC_ROOT 需要在路径中（MC 内部依赖需要），项目根也需要
 _PROJECT_ROOT = str(Path(__file__).parent.parent)
 _MC_ROOT = str(Path(__file__).parent / "MediaCrawler")
-# 去掉已有的再按顺序插入，确保项目根在前
-for p in [_MC_ROOT, _PROJECT_ROOT]:
-    if p in sys.path:
-        sys.path.remove(p)
-sys.path.insert(0, _MC_ROOT)
-sys.path.insert(0, _PROJECT_ROOT)
+if _MC_ROOT not in sys.path:
+    sys.path.insert(0, _MC_ROOT)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
-from config import settings
+from ms_config import settings
 from DeepSentimentCrawling.cookie_manager import CookieManager
 from DeepSentimentCrawling.dispatcher import TaskDispatcher
 from DeepSentimentCrawling.login_console import app as login_app, init_cookie_manager, cleanup as console_cleanup

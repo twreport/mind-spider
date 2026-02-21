@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from config import settings
+from ms_config import settings
 
 # jieba 粗筛停用词（单字、标点、常见套话）
 _STOPWORDS = frozenset(

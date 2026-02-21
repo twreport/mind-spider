@@ -18,12 +18,7 @@ from loguru import logger
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-try:
-    import config
-except ImportError:
-    raise ImportError("无法导入config.py配置文件")
-
-from config import settings
+from ms_config import settings
 
 
 class DatabaseManager:

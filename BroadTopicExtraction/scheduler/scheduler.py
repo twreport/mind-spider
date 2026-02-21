@@ -29,7 +29,7 @@ from analyzer.data_reader import DataReader
 from analyzer.signal_detector import SignalDetector
 from analyzer.candidate_manager import CandidateManager
 from pipeline.mongo_writer import MongoWriter
-from config import settings
+from ms_config import settings
 
 
 class MindSpiderScheduler:

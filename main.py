@@ -16,7 +16,7 @@ import pymysql
 from pymysql.cursors import DictCursor
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from sqlalchemy import inspect, text
-from config import settings
+from ms_config import settings
 from loguru import logger
 from urllib.parse import quote_plus
 
@@ -24,12 +24,6 @@ from urllib.parse import quote_plus
 project_root = Path(__file__).parent
 sys.path.append(str(project_root))
 
-try:
-    import config
-except ImportError:
-    logger.error("错误：无法导入config.py配置文件")
-    logger.error("请确保项目根目录下存在config.py文件，并包含数据库和API配置信息")
-    sys.exit(1)
 
 class MindSpider:
     """MindSpider主程序"""

@@ -16,11 +16,7 @@ from openai import OpenAI
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-try:
-    import config
-    from config import settings
-except ImportError:
-    raise ImportError("无法导入settings.py配置文件")
+from ms_config import settings
 
 class TopicExtractor:
     """话题提取器"""

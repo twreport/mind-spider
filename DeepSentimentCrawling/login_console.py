@@ -22,7 +22,7 @@ from pathlib import Path
 _PROJECT_ROOT = str(Path(__file__).parent.parent)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
-from config import settings
+from ms_config import settings
 
 from DeepSentimentCrawling.cookie_manager import CookieManager
 

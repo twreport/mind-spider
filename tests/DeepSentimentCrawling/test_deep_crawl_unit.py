@@ -352,33 +352,29 @@ class TestWorkerConfigSafety:
 
     def test_save_restore_roundtrip(self):
         """config 保存后恢复，全局状态应不变"""
-        # _save_config/_restore_config 操作 `import config` 得到的模块的大写属性
-        # 在测试环境中 config 是项目根的 Pydantic Settings 模块
-        # 我们直接往上面加临时属性来验证保存/恢复逻辑
-        from DeepSentimentCrawling.worker import _save_config, _restore_config
-        import config as cfg_module
+        from DeepSentimentCrawling.worker import _save_config, _restore_config, mc_config
 
         # 先设置一个已知属性用于测试
-        cfg_module.TEST_PLATFORM = "bili"
-        cfg_module.TEST_KEYWORDS = "原始关键词"
+        mc_config.TEST_PLATFORM = "bili"
+        mc_config.TEST_KEYWORDS = "原始关键词"
 
         original = _save_config()
         assert "TEST_PLATFORM" in original
         assert original["TEST_PLATFORM"] == "bili"
 
         # 修改
-        cfg_module.TEST_PLATFORM = "test_modified"
-        cfg_module.TEST_KEYWORDS = "被篡改的关键词"
-        assert cfg_module.TEST_PLATFORM == "test_modified"
+        mc_config.TEST_PLATFORM = "test_modified"
+        mc_config.TEST_KEYWORDS = "被篡改的关键词"
+        assert mc_config.TEST_PLATFORM == "test_modified"
 
         # 恢复
         _restore_config(original)
-        assert cfg_module.TEST_PLATFORM == "bili"
-        assert cfg_module.TEST_KEYWORDS == "原始关键词"
+        assert mc_config.TEST_PLATFORM == "bili"
+        assert mc_config.TEST_KEYWORDS == "原始关键词"
 
         # 清理
-        del cfg_module.TEST_PLATFORM
-        del cfg_module.TEST_KEYWORDS
+        del mc_config.TEST_PLATFORM
+        del mc_config.TEST_KEYWORDS
 
 
 # ==================== 5. TaskDispatcher 熔断器测试 ====================

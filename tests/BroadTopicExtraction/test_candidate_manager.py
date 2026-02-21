@@ -21,7 +21,7 @@ from BroadTopicExtraction.analyzer.candidate_manager import (
 from BroadTopicExtraction.analyzer.signal_detector import SignalDetector, _extract_keywords
 from BroadTopicExtraction.analyzer.data_reader import DataReader
 from BroadTopicExtraction.pipeline.mongo_writer import MongoWriter
-from config import settings
+from ms_config import settings
 
 LOOKBACK = 3600 * 6  # 6 小时
 

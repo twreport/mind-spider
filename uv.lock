@@ -1899,6 +1899,7 @@ dependencies = [
     { name = "regex" },
     { name = "requests" },
     { name = "scrapy" },
+    { name = "serverchan-sdk" },
     { name = "socksio" },
     { name = "sqlalchemy" },
     { name = "tenacity" },
@@ -1974,6 +1975,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.3" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "scrapy", specifier = ">=2.11.0" },
+    { name = "serverchan-sdk", specifier = ">=0.1.0" },
     { name = "socksio", specifier = ">=1.0.0" },
     { name = "sqlalchemy", specifier = ">=2.0.43" },
     { name = "tenacity", specifier = ">=8.2.2" },
@@ -3518,6 +3520,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/db/fb/0ccc11eaabdac1f210f27fb6b2ad4aa4ff8a5085cbc616102536fe2c56f4/scrapy-2.14.1.tar.gz", hash = "sha256:b2a4e61802e0a5518bc8293058adedbb6b0d51c08c125d1322b1af7c7cbca4c1", size = 1251898, upload-time = "2026-01-12T19:26:44.572Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/28/5d/e9e42968535589423a0831adf9daac7555758e5e723f99fa2d6a7e68f715/scrapy-2.14.1-py3-none-any.whl", hash = "sha256:e3a3c7969b7e692864f7de05e10ecb2d1bc813ed571361dc71142e5368ff92dc", size = 331706, upload-time = "2026-01-12T19:26:42.434Z" },
+]
+
+[[package]]
+name = "serverchan-sdk"
+version = "1.0.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5b/ee/be5e6f23cedc1f583f6679324ee1afd2630507b574fb12169574afa404f2/serverchan_sdk-1.0.6.tar.gz", hash = "sha256:a79a8f0a0d4b83d8cabae4f6ca004338e404d4dbba9d9d935f27b15379cd502b", size = 2652, upload-time = "2024-10-15T08:46:56.261Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cc/74/7673ff33a6a0ad580d99580f8e91daf42bf1717dbe951015f035cffa80d6/serverchan_sdk-1.0.6-py3-none-any.whl", hash = "sha256:c9715f2401f7a0cce8bd3aaba3a3a5f56e59dbc533c023c285c73a67d383b304", size = 1668, upload-time = "2024-10-15T08:46:53.562Z" },
 ]
 
 [[package]]

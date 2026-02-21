@@ -17,7 +17,7 @@ from BroadTopicExtraction.analyzer.signal_detector import (
     _normalize_platform,
 )
 from BroadTopicExtraction.pipeline.mongo_writer import MongoWriter
-from config import settings
+from ms_config import settings
 
 # 用较长的回看窗口，确保能拿到数据
 LOOKBACK = 3600 * 6  # 6 小时

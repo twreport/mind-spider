@@ -31,7 +31,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from config import settings
+from ms_config import settings
 
 def _env(key: str, default: Optional[str] = None) -> Optional[str]:
     v = os.getenv(key)

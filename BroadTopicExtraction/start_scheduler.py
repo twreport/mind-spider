@@ -26,7 +26,7 @@ project_root = module_dir.parent
 sys.path.insert(0, str(module_dir))
 sys.path.insert(0, str(project_root))
 
-from config import settings
+from ms_config import settings
 from scheduler.scheduler import MindSpiderScheduler
 from scheduler.runner import TaskRunner
 

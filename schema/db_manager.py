@@ -19,13 +19,8 @@ from urllib.parse import quote_plus
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-try:
-    import config
-except ImportError:
-    logger.error("错误: 无法导入config.py配置文件")
-    sys.exit(1)
 
-from config import settings
+from ms_config import settings
 
 class DatabaseManager:
     def __init__(self):

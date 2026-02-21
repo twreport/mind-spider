@@ -76,7 +76,7 @@ from pathlib import Path
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 try:
-    from config import settings
+    from ms_config import settings
     MONGO_URI = settings.MONGO_URI
     MONGO_DATABASE = settings.MONGO_DB_NAME
 except ImportError:

@@ -155,7 +155,7 @@ Capabilities communicate through shared data (MongoDB collections, MySQL tables)
 
 ### Configuration
 - `.env` - Environment variables (database credentials, API keys)
-- `config.py` - Generated from `config.py.example`, uses Pydantic Settings
+- `ms_config.py` - Generated from `ms_config.py.example`, uses Pydantic Settings
 - Supports MySQL and PostgreSQL
 - AI API: DeepSeek recommended (`MINDSPIDER_API_KEY`, `MINDSPIDER_BASE_URL`)
 
