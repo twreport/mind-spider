@@ -6,6 +6,7 @@ PlatformWorker — 在进程内调用 MediaCrawler 执行单个爬取任务
 每个任务执行前设置 ContextVar 以便 store 层写入 topic_id 和 crawling_task_id。
 """
 
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -24,19 +25,22 @@ if _PROJECT_ROOT not in sys.path:
 from DeepSentimentCrawling.cookie_manager import CookieManager
 from DeepSentimentCrawling.alert import alert_cookie_expired
 
-# MC 的 config（包）和 var 直接 import 即可，
-# 项目根的 config.py 已重命名为 ms_config.py，不再冲突。
-# 注意：不能 `from main import CrawlerFactory`，因为项目根也有 main.py 会抢先。
-# 直接 import 各平台 crawler 类，绕开 MC 的 main.py。
-import config as mc_config
-from var import source_keyword_var, topic_id_var, crawling_task_id_var
-from media_platform.bilibili import BilibiliCrawler
-from media_platform.douyin import DouYinCrawler
-from media_platform.kuaishou import KuaishouCrawler
-from media_platform.tieba import TieBaCrawler
-from media_platform.weibo import WeiboCrawler
-from media_platform.xhs import XiaoHongShuCrawler
-from media_platform.zhihu import ZhihuCrawler
+# MC 内部有模块级代码用相对路径读文件（如 douyin/help.py 的 open('libs/douyin.js')），
+# 需要在 import 时让 CWD 指向 MC 根目录。
+_old_cwd = os.getcwd()
+os.chdir(_MC_ROOT)
+try:
+    import config as mc_config
+    from var import source_keyword_var, topic_id_var, crawling_task_id_var
+    from media_platform.bilibili import BilibiliCrawler
+    from media_platform.douyin import DouYinCrawler
+    from media_platform.kuaishou import KuaishouCrawler
+    from media_platform.tieba import TieBaCrawler
+    from media_platform.weibo import WeiboCrawler
+    from media_platform.xhs import XiaoHongShuCrawler
+    from media_platform.zhihu import ZhihuCrawler
+finally:
+    os.chdir(_old_cwd)
 
 _CRAWLERS = {
     "xhs": XiaoHongShuCrawler,
