@@ -10,7 +10,7 @@
 """
 
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import Integer, String, BigInteger, Text, ForeignKey
+from sqlalchemy import Integer, String, BigInteger, Text
 
 # 使用 models_sa 中的 Base，确保所有表在同一个 metadata 中，外键引用可以正常工作
 from models_sa import Base
@@ -39,8 +39,8 @@ class BilibiliVideo(Base):
     video_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     video_cover_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_keyword: Mapped[str | None] = mapped_column(Text, default='', nullable=True)
-    topic_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("daily_topics.topic_id", ondelete="SET NULL"), nullable=True)
-    crawling_task_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("crawling_tasks.task_id", ondelete="SET NULL"), nullable=True)
+    topic_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    crawling_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 class BilibiliVideoComment(Base):
     __tablename__ = "bilibili_video_comment"
@@ -136,8 +136,8 @@ class DouyinAweme(Base):
     music_download_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     note_download_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_keyword: Mapped[str | None] = mapped_column(Text, default='', nullable=True)
-    topic_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("daily_topics.topic_id", ondelete="SET NULL"), nullable=True)
-    crawling_task_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("crawling_tasks.task_id", ondelete="SET NULL"), nullable=True)
+    topic_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    crawling_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 class DouyinAwemeComment(Base):
     __tablename__ = "douyin_aweme_comment"
@@ -198,8 +198,8 @@ class KuaishouVideo(Base):
     video_cover_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     video_play_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_keyword: Mapped[str | None] = mapped_column(Text, default='', nullable=True)
-    topic_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("daily_topics.topic_id", ondelete="SET NULL"), nullable=True)
-    crawling_task_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("crawling_tasks.task_id", ondelete="SET NULL"), nullable=True)
+    topic_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    crawling_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 class KuaishouVideoComment(Base):
     __tablename__ = "kuaishou_video_comment"
@@ -235,8 +235,8 @@ class WeiboNote(Base):
     shared_count: Mapped[str | None] = mapped_column(Text, nullable=True)
     note_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_keyword: Mapped[str | None] = mapped_column(Text, default='', nullable=True)
-    topic_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("daily_topics.topic_id", ondelete="SET NULL"), nullable=True)
-    crawling_task_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("crawling_tasks.task_id", ondelete="SET NULL"), nullable=True)
+    topic_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    crawling_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 class WeiboNoteComment(Base):
     __tablename__ = "weibo_note_comment"
@@ -317,8 +317,8 @@ class XhsNote(Base):
     note_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_keyword: Mapped[str | None] = mapped_column(Text, default='', nullable=True)
     xsec_token: Mapped[str | None] = mapped_column(Text, nullable=True)
-    topic_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("daily_topics.topic_id", ondelete="SET NULL"), nullable=True)
-    crawling_task_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("crawling_tasks.task_id", ondelete="SET NULL"), nullable=True)
+    topic_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    crawling_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 
 class XhsNoteComment(Base):
@@ -359,8 +359,8 @@ class TiebaNote(Base):
     add_ts: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     last_modify_ts: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     source_keyword: Mapped[str | None] = mapped_column(Text, default='', nullable=True)
-    topic_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("daily_topics.topic_id", ondelete="SET NULL"), nullable=True)
-    crawling_task_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("crawling_tasks.task_id", ondelete="SET NULL"), nullable=True)
+    topic_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    crawling_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 class TiebaComment(Base):
     __tablename__ = "tieba_comment"
@@ -421,8 +421,8 @@ class ZhihuContent(Base):
     user_url_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     add_ts: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     last_modify_ts: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    topic_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("daily_topics.topic_id", ondelete="SET NULL"), nullable=True)
-    crawling_task_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("crawling_tasks.task_id", ondelete="SET NULL"), nullable=True)
+    topic_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    crawling_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 class ZhihuComment(Base):
     __tablename__ = "zhihu_comment"
