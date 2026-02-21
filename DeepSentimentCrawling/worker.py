@@ -103,6 +103,7 @@ class PlatformWorker:
             mc_config.LOGIN_TYPE = "cookie"
             mc_config.COOKIES = CookieManager.format_cookies_for_config(cookies)
             mc_config.HEADLESS = True
+            mc_config.ENABLE_CDP_MODE = False
             mc_config.ENABLE_GET_COMMENTS = True
             mc_config.CRAWLER_TYPE = "search"
             mc_config.ENABLE_GET_MEIDAS = False
@@ -133,8 +134,9 @@ class PlatformWorker:
             error_msg = str(e)
             logger.error(f"[Worker] 任务 {task_id} 执行失败: {error_msg}")
 
-            # 检查是否为 cookie 过期相关错误
-            if any(kw in error_msg.lower() for kw in ["login", "cookie", "auth", "403", "未登录"]):
+            # 检查是否为 cookie 过期相关错误（只检查错误前 200 字符，避免 Chrome 启动参数误匹配）
+            short_err = error_msg[:200].lower()
+            if any(kw in short_err for kw in ["login", "cookie", "auth", "403", "未登录"]):
                 self.cookie_manager.mark_expired(platform)
                 return {"status": "failed", "error": error_msg, "cookie_expired": True}
 
