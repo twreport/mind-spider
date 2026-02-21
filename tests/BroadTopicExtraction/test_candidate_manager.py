@@ -77,14 +77,20 @@ def manager(signal_mongo):
 @pytest.fixture(scope="module")
 def cycle_result(seeded_signals, manager, signal_mongo):
     """运行一轮候选管理，共享结果"""
+    # 记录测试前已有的候选 ID，清理时只删新增的
+    col = signal_mongo.get_collection(COLLECTION)
+    pre_existing = {doc["candidate_id"] for doc in col.find({}, {"candidate_id": 1})}
+
     stats = manager.run_cycle()
     print(f"\n[cycle] 统计: {stats}")
     yield stats
 
-    # 清理: 删除本次测试创建的候选
-    col = signal_mongo.get_collection(COLLECTION)
-    result = col.delete_many({})
-    print(f"\n[cleanup] 删除 {result.deleted_count} 个测试候选")
+    # 清理: 只删除本次测试新建的候选
+    all_now = {doc["candidate_id"] for doc in col.find({}, {"candidate_id": 1})}
+    test_created = all_now - pre_existing
+    if test_created:
+        result = col.delete_many({"candidate_id": {"$in": list(test_created)}})
+        print(f"\n[cleanup] 删除 {result.deleted_count} 个测试候选（保留 {len(pre_existing)} 个已有候选）")
 
 
 # ==================== 基础功能测试 ====================
