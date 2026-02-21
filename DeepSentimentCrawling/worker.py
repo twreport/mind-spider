@@ -94,6 +94,10 @@ class PlatformWorker:
         # 2. 保存 MediaCrawler 全局配置快照
         saved_config = _save_config()
 
+        # MC 内部用相对路径读文件（libs/stealth.min.js 等），运行期间 CWD 必须在 MC 根目录
+        old_cwd = os.getcwd()
+        os.chdir(_MC_ROOT)
+
         try:
             # 3. 覆写 config 为当前任务参数
             mc_config.PLATFORM = platform
@@ -143,5 +147,6 @@ class PlatformWorker:
             return {"status": "failed", "error": error_msg}
 
         finally:
-            # 6. 恢复 config 快照
+            # 6. 恢复 config 快照和 CWD
             _restore_config(saved_config)
+            os.chdir(old_cwd)
