@@ -48,14 +48,16 @@ _PLATFORM_LOGIN = {
         "name": "抖音",
     },
     "bili": {
-        "url": "https://www.bilibili.com",
-        "qr_selector": "//div[@class='login-scan-box']//img",
+        "url": "https://passport.bilibili.com/login",
+        "pre_click_selector": "//div[contains(@class,'tab--') and contains(text(),'扫码登录')]",
+        "qr_selector": "//div[contains(@class,'qrcode-wrap')]//img | //canvas[contains(@class,'qrcode')]",
         "session_key": "SESSDATA",
         "name": "哔哩哔哩",
     },
     "wb": {
-        "url": "https://weibo.com",
-        "qr_selector": "xpath=//img[@class='w-full h-full']",
+        "url": "https://weibo.com/login",
+        "pre_click_selector": "//div[contains(text(),'扫码登录')]",
+        "qr_selector": "xpath=//img[contains(@class,'qr')]",
         "session_key": "SSOLoginState",
         "name": "微博",
     },
@@ -73,7 +75,8 @@ _PLATFORM_LOGIN = {
     },
     "zhihu": {
         "url": "https://www.zhihu.com/signin",
-        "qr_selector": "//img[@class='Login-qrcode']",
+        "pre_click_selector": "//div[contains(text(),'扫码登录')]",
+        "qr_selector": "//img[contains(@class,'Qrcode')]",
         "session_key": "z_c0",
         "name": "知乎",
     },
@@ -279,12 +282,28 @@ async def get_qr(platform: str, token: str = Query("")):
             _browser = await pw.chromium.launch(headless=True)
 
         context = await _browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1280, "height": 800},
         )
         page = await context.new_page()
 
         await page.goto(plat_conf["url"], wait_until="domcontentloaded", timeout=30000)
         await page.wait_for_timeout(3000)
+
+        # 部分平台需要先点击"扫码登录"切换到二维码模式
+        pre_click = plat_conf.get("pre_click_selector")
+        if pre_click:
+            try:
+                btn = await page.wait_for_selector(pre_click, timeout=5000)
+                if btn:
+                    await btn.click()
+                    await page.wait_for_timeout(2000)
+            except Exception:
+                pass
 
         # 尝试获取二维码图片
         qr_base64 = None
