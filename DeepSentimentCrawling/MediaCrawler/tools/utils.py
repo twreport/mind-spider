@@ -10,11 +10,19 @@
 
 
 import argparse
+import asyncio
 import logging
+import random
 
 from .crawler_util import *
 from .slider_util import *
 from .time_util import *
+
+
+async def random_sleep(base_seconds: float = 2.0):
+    """随机延迟，范围为 [base, base * 2.5]，模拟人类行为"""
+    delay = random.uniform(base_seconds, base_seconds * 2.5)
+    await asyncio.sleep(delay)
 
 
 def init_loging_config():

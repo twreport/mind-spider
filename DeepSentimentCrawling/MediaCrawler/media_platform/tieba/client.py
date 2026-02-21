@@ -254,7 +254,7 @@ class BaiduTieBaClient(AbstractApiClient):
             await self.playwright_page.goto(full_url, wait_until="domcontentloaded")
 
             # 等待页面加载,使用配置文件中的延时设置
-            await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
+            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
 
             # 获取页面HTML内容
             page_content = await self.playwright_page.content()
@@ -291,7 +291,7 @@ class BaiduTieBaClient(AbstractApiClient):
             await self.playwright_page.goto(note_url, wait_until="domcontentloaded")
 
             # 等待页面加载,使用配置文件中的延时设置
-            await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
+            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
 
             # 获取页面HTML内容
             page_content = await self.playwright_page.content()
@@ -339,7 +339,7 @@ class BaiduTieBaClient(AbstractApiClient):
                 await self.playwright_page.goto(comment_url, wait_until="domcontentloaded")
 
                 # 等待页面加载,使用配置文件中的延时设置
-                await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
 
                 # 获取页面HTML内容
                 page_content = await self.playwright_page.content()
@@ -425,7 +425,7 @@ class BaiduTieBaClient(AbstractApiClient):
                     await self.playwright_page.goto(sub_comment_url, wait_until="domcontentloaded")
 
                     # 等待页面加载,使用配置文件中的延时设置
-                    await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                    await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
 
                     # 获取页面HTML内容
                     page_content = await self.playwright_page.content()
@@ -482,7 +482,7 @@ class BaiduTieBaClient(AbstractApiClient):
             await self.playwright_page.goto(tieba_url, wait_until="domcontentloaded")
 
             # 等待页面加载,使用配置文件中的延时设置
-            await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
+            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
 
             # 获取页面HTML内容
             page_content = await self.playwright_page.content()
@@ -517,7 +517,7 @@ class BaiduTieBaClient(AbstractApiClient):
             await self.playwright_page.goto(creator_url, wait_until="domcontentloaded")
 
             # 等待页面加载,使用配置文件中的延时设置
-            await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
+            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
 
             # 获取页面HTML内容
             page_content = await self.playwright_page.content()
@@ -552,7 +552,7 @@ class BaiduTieBaClient(AbstractApiClient):
             await self.playwright_page.goto(creator_url, wait_until="domcontentloaded")
 
             # 等待页面加载,使用配置文件中的延时设置
-            await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
+            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
 
             # 获取页面内容(这个接口返回JSON)
             page_content = await self.playwright_page.content()

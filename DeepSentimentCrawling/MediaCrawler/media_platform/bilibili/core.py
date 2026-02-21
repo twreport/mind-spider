@@ -218,7 +218,7 @@ class BilibiliCrawler(AbstractCrawler):
                 page += 1
                 
                 # Sleep after page navigation
-                await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
                 utils.logger.info(f"[BilibiliCrawler.search_by_keywords] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page-1}")
                 
                 await self.batch_get_video_comments(video_id_list)
@@ -299,7 +299,7 @@ class BilibiliCrawler(AbstractCrawler):
                         page += 1
                         
                         # Sleep after page navigation
-                        await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                        await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
                         utils.logger.info(f"[BilibiliCrawler.search_by_keywords_in_time_range] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page-1}")
                         
                         await self.batch_get_video_comments(video_id_list)
@@ -336,7 +336,7 @@ class BilibiliCrawler(AbstractCrawler):
         async with semaphore:
             try:
                 utils.logger.info(f"[BilibiliCrawler.get_comments] begin get video_id: {video_id} comments ...")
-                await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
                 utils.logger.info(f"[BilibiliCrawler.get_comments] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after fetching comments for video {video_id}")
                 await self.bili_client.get_video_all_comments(
                     video_id=video_id,
@@ -366,7 +366,7 @@ class BilibiliCrawler(AbstractCrawler):
             await self.get_specified_videos(video_bvids_list)
             if int(result["page"]["count"]) <= pn * ps:
                 break
-            await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
+            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
             utils.logger.info(f"[BilibiliCrawler.get_creator_videos] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {pn}")
             pn += 1
 
@@ -415,7 +415,7 @@ class BilibiliCrawler(AbstractCrawler):
                 result = await self.bili_client.get_video_info(aid=aid, bvid=bvid)
                 
                 # Sleep after fetching video details
-                await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
                 utils.logger.info(f"[BilibiliCrawler.get_video_info_task] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after fetching video details {bvid or aid}")
                 
                 return result
@@ -581,7 +581,7 @@ class BilibiliCrawler(AbstractCrawler):
             return
 
         content = await self.bili_client.get_video_media(video_url)
-        await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
+        await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
         utils.logger.info(f"[BilibiliCrawler.get_bilibili_video] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after fetching video {aid}")
         if content is None:
             return
