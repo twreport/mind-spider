@@ -15,6 +15,7 @@ import hashlib
 import time
 from typing import Optional
 
+import yaml
 from loguru import logger
 from pymongo import UpdateOne
 
@@ -28,6 +29,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from config import settings
 
 COLLECTION = "candidates"
+
+# 加载平台权重（从 platforms.yaml）
+_PLATFORMS_YAML = Path(__file__).parent.parent / "config" / "platforms.yaml"
+_PLATFORM_WEIGHTS: dict[str, float] = {}
+try:
+    with open(_PLATFORMS_YAML, "r", encoding="utf-8") as _f:
+        _platforms_config = yaml.safe_load(_f) or {}
+    _PLATFORM_WEIGHTS = {k: v.get("weight", 0.5) for k, v in _platforms_config.items() if isinstance(v, dict)}
+except Exception:
+    logger.warning(f"无法加载平台权重配置: {_PLATFORMS_YAML}")
+
+DEFAULT_PLATFORM_WEIGHT = 0.5  # 未配置平台的默认权重
 
 # 活跃状态（参与衰减和状态机评估）
 _ACTIVE_STATUSES = frozenset({"emerging", "rising", "confirmed", "exploded", "tracking"})
@@ -146,24 +159,27 @@ class CandidateManager:
         return False
 
     def _calc_score_pos(self, signal: dict) -> int:
-        """从信号计算 score_pos = sum(int(10000/pos))"""
+        """从信号计算 score_pos = sum(int(10000/pos * weight))"""
         if signal.get("signal_type") == "cross_platform":
             total = 0
-            for plat_info in signal.get("details", {}).get("platform_items", {}).values():
+            for plat, plat_info in signal.get("details", {}).get("platform_items", {}).items():
                 pos = plat_info.get("position")
                 if pos and pos > 0:
-                    total += int(10000 / pos)
+                    w = _PLATFORM_WEIGHTS.get(plat, DEFAULT_PLATFORM_WEIGHT)
+                    total += int(10000 / pos * w)
             return total
         # Layer 1: 单平台
+        plat = signal.get("platform", "")
+        w = _PLATFORM_WEIGHTS.get(plat, DEFAULT_PLATFORM_WEIGHT)
         pos_history = signal.get("position_history", [])
         if pos_history:
             pos = pos_history[-1].get("val", 0)
             if pos > 0:
-                return int(10000 / pos)
+                return int(10000 / pos * w)
         # fallback: details 里的 position
         pos = signal.get("details", {}).get("position") or signal.get("details", {}).get("current_position")
         if pos and pos > 0:
-            return int(10000 / pos)
+            return int(10000 / pos * w)
         return 0
 
     def _calc_sum_hot(self, signal: dict) -> int:

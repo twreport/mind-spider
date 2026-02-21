@@ -16,6 +16,8 @@ from BroadTopicExtraction.analyzer.candidate_manager import (
     COLLECTION,
     _ACTIVE_STATUSES,
     _is_declining,
+    _PLATFORM_WEIGHTS,
+    DEFAULT_PLATFORM_WEIGHT,
 )
 
 
@@ -189,34 +191,29 @@ class TestScorePosRealData:
     """用真实信号结构验证 score_pos 计算"""
 
     def test_cross_platform_17_platforms(self, manager):
-        """真实数据：17 个平台的 cross_platform 信号"""
+        """真实数据：17 个平台的 cross_platform 信号，score_pos 受权重影响"""
+        platforms = {
+            "tencent": 2, "sina": 25, "netease": 5, "douyin": 35, "baidu": 34,
+            "toutiao": 30, "ithome": 31, "juejin": 2, "36kr": 38, "cls": 19,
+            "zhihu": 44, "bilibili": 5, "tieba": 25, "huxiu": 9, "v2ex": 28,
+            "weibo": 25, "wallstreetcn": 26,
+        }
         sig = _make_cross_platform_signal(
             title="谷歌推出Gemini 3.1 Pro模型",
             platform_items={
-                "tencent": {"title": "t", "position": 2, "hot_value": 3967406},
-                "sina": {"title": "t", "position": 25, "hot_value": 1680000},
-                "netease": {"title": "t", "position": 5, "hot_value": 3834},
-                "douyin": {"title": "t", "position": 35, "hot_value": 7736305},
-                "baidu": {"title": "t", "position": 34, "hot_value": 4741681},
-                "toutiao": {"title": "t", "position": 30, "hot_value": 1401021},
-                "ithome": {"title": "t", "position": 31, "hot_value": None},
-                "juejin": {"title": "t", "position": 2, "hot_value": 616},
-                "36kr": {"title": "t", "position": 38, "hot_value": None},
-                "cls": {"title": "t", "position": 19, "hot_value": None},
-                "zhihu": {"title": "t", "position": 44, "hot_value": 652},
-                "bilibili": {"title": "t", "position": 5, "hot_value": 652},
-                "tieba": {"title": "t", "position": 25, "hot_value": None},
-                "huxiu": {"title": "t", "position": 9, "hot_value": 652},
-                "v2ex": {"title": "t", "position": 28, "hot_value": None},
-                "weibo": {"title": "t", "position": 25, "hot_value": 652},
-                "wallstreetcn": {"title": "t", "position": 26, "hot_value": None},
+                p: {"title": "t", "position": pos, "hot_value": 0}
+                for p, pos in platforms.items()
             },
         )
         score = manager._calc_score_pos(sig)
         expected = sum(
-            int(10000 / p) for p in [2, 25, 5, 35, 34, 30, 31, 2, 38, 19, 44, 5, 25, 9, 28, 25, 26]
+            int(10000 / pos * _PLATFORM_WEIGHTS.get(p, DEFAULT_PLATFORM_WEIGHT))
+            for p, pos in platforms.items()
         )
         assert score == expected
+        # 加权后应显著低于无权重版本
+        unweighted = sum(int(10000 / pos) for pos in platforms.values())
+        assert score < unweighted
 
     def test_cross_platform_3_platforms(self, manager):
         """真实数据：3 个平台"""
@@ -229,7 +226,12 @@ class TestScorePosRealData:
             },
         )
         score = manager._calc_score_pos(sig)
-        assert score == int(10000 / 24) + int(10000 / 48) + int(10000 / 26)
+        expected = (
+            int(10000 / 24 * _PLATFORM_WEIGHTS.get("douyin", DEFAULT_PLATFORM_WEIGHT))
+            + int(10000 / 48 * _PLATFORM_WEIGHTS.get("baidu", DEFAULT_PLATFORM_WEIGHT))
+            + int(10000 / 26 * _PLATFORM_WEIGHTS.get("tieba", DEFAULT_PLATFORM_WEIGHT))
+        )
+        assert score == expected
 
     def test_cross_platform_sum_hot_skips_none(self, manager):
         """hot_value 为 None 的平台不计入 sum_hot"""
@@ -245,25 +247,40 @@ class TestScorePosRealData:
         assert hot == 5001000
 
     def test_position_jump_score(self, manager):
-        """position_jump 信号：用 position_history 最后一条"""
+        """position_jump 信号：用 position_history 最后一条，受权重影响"""
         sig = _make_position_jump_signal(curr_pos=15)
         score = manager._calc_score_pos(sig)
-        assert score == int(10000 / 15)
+        w = _PLATFORM_WEIGHTS.get("bilibili", DEFAULT_PLATFORM_WEIGHT)
+        assert score == int(10000 / 15 * w)
 
     def test_position_jump_score_top1(self, manager):
         sig = _make_position_jump_signal(curr_pos=1)
         score = manager._calc_score_pos(sig)
-        assert score == 10000
+        w = _PLATFORM_WEIGHTS.get("bilibili", DEFAULT_PLATFORM_WEIGHT)
+        assert score == int(10000 * w)
 
     def test_velocity_score_from_position_history(self, manager):
         sig = _make_velocity_signal()
         score = manager._calc_score_pos(sig)
-        assert score == int(10000 / 5)
+        w = _PLATFORM_WEIGHTS.get("baidu", DEFAULT_PLATFORM_WEIGHT)
+        assert score == int(10000 / 5 * w)
 
     def test_new_entry_score_fallback_to_details(self, manager):
         sig = _make_new_entry_signal(position=3)
         score = manager._calc_score_pos(sig)
-        assert score == int(10000 / 3)
+        w = _PLATFORM_WEIGHTS.get("baidu", DEFAULT_PLATFORM_WEIGHT)
+        assert score == int(10000 / 3 * w)
+
+    def test_ithome_top1_low_score(self, manager):
+        """ithome top 1 应因低权重得到低分"""
+        sig = _make_position_jump_signal(title="某硬件新闻", platform="ithome", curr_pos=1)
+        score = manager._calc_score_pos(sig)
+        assert score == int(10000 * _PLATFORM_WEIGHTS["ithome"])  # 2000
+        # 远低于 baidu top 1
+        baidu_sig = _make_velocity_signal()
+        baidu_sig["position_history"] = [{"ts": 1, "val": 1}]
+        baidu_score = manager._calc_score_pos(baidu_sig)
+        assert baidu_score > score * 3
 
 
 # ==================== 候选创建（真实数据结构） ====================

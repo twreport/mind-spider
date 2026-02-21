@@ -8,6 +8,7 @@
 weibo:
   name: 微博
   type: social
+  weight: 1.0
   risk_level: medium  # low/medium/high
   field_mapping:
     title: title_sub
@@ -22,6 +23,7 @@ weibo:
 douyin:
   name: 抖音
   type: social
+  weight: 1.0
   risk_level: high
   field_mapping:
     title: word
@@ -37,6 +39,7 @@ douyin:
 baidu:
   name: 百度
   type: search
+  weight: 1.0
   risk_level: low
   field_mapping:
     title: query
@@ -52,6 +55,7 @@ baidu:
 zhihu:
   name: 知乎
   type: social
+  weight: 0.8
   risk_level: medium
   field_mapping:
     title: title
@@ -66,6 +70,7 @@ zhihu:
 bilibili:
   name: 哔哩哔哩
   type: video
+  weight: 0.6
   risk_level: low
   field_mapping:
     title: keyword
@@ -81,6 +86,7 @@ bilibili:
 toutiao:
   name: 今日头条
   type: news
+  weight: 1.0
   risk_level: low
   field_mapping:
     title: Title
@@ -96,6 +102,7 @@ toutiao:
 tencent:
   name: 腾讯新闻
   type: news
+  weight: 1.0
   risk_level: low
   field_mapping:
     title: title
@@ -111,6 +118,7 @@ tencent:
 netease:
   name: 网易新闻
   type: news
+  weight: 0.8
   risk_level: low
   field_mapping:
     title: title
@@ -126,6 +134,7 @@ netease:
 sina:
   name: 新浪
   type: news
+  weight: 1.0
   risk_level: low
   field_mapping:
     title: title
@@ -141,6 +150,7 @@ sina:
 hupu:
   name: 虎扑
   type: sports
+  weight: 0.3
   risk_level: low
   field_mapping:
     title: title
@@ -156,6 +166,7 @@ hupu:
 kuaishou:
   name: 快手
   type: video
+  weight: 0.8
   risk_level: medium
   field_mapping:
     title: name
@@ -170,6 +181,7 @@ kuaishou:
 tieba:
   name: 贴吧
   type: social
+  weight: 0.6
   risk_level: low
   field_mapping:
     title: title
@@ -188,6 +200,7 @@ tieba:
 ithome:
   name: IT之家
   type: tech
+  weight: 0.2
   risk_level: low
   field_mapping:
     title: title
@@ -201,6 +214,7 @@ ithome:
 huxiu:
   name: 虎嗅
   type: tech
+  weight: 0.2
   risk_level: low
   field_mapping:
     title: title
@@ -214,6 +228,7 @@ huxiu:
 kr36:
   name: 36氪
   type: tech
+  weight: 0.2
   risk_level: low
   field_mapping:
     title: title
@@ -227,6 +242,7 @@ kr36:
 cls:
   name: 财联社
   type: finance
+  weight: 0.3
   risk_level: low
   field_mapping:
     title: title
@@ -240,6 +256,7 @@ cls:
 xueqiu:
   name: 雪球
   type: finance
+  weight: 0.3
   risk_level: low
   field_mapping:
     title: title
@@ -253,6 +270,7 @@ xueqiu:
 juejin:
   name: 掘金
   type: tech
+  weight: 0.2
   risk_level: low
   field_mapping:
     title: title
@@ -270,6 +288,7 @@ juejin:
 rmrb:
   name: 人民日报
   type: media
+  weight: 0.6
   risk_level: low
   field_mapping:
     title: title
@@ -285,6 +304,7 @@ rmrb:
 xinhua:
   name: 新华网
   type: media
+  weight: 0.6
   risk_level: low
   field_mapping:
     title: title
@@ -298,6 +318,7 @@ xinhua:
 gmrb:
   name: 光明日报
   type: media
+  weight: 0.6
   risk_level: low
   field_mapping:
     title: title
@@ -311,6 +332,7 @@ gmrb:
 jjrb:
   name: 经济日报
   type: media
+  weight: 0.6
   risk_level: low
   field_mapping:
     title: title
@@ -324,6 +346,7 @@ jjrb:
 cctv:
   name: 央视新闻
   type: media
+  weight: 0.6
   risk_level: low
   field_mapping:
     title: title
@@ -337,6 +360,7 @@ cctv:
 thepaper:
   name: 澎湃新闻
   type: media
+  weight: 0.6
   risk_level: low
   field_mapping:
     title: title
@@ -367,3 +391,37 @@ thepaper:
 #   左边是 MongoDB 统一字段名
 #   右边是该平台原始 API 返回的字段名
 #   ~ 表示该平台无此字段
+
+# ============================================
+# 聚合器平台（仅通过聚合器采集，无独立爬虫）
+# ============================================
+
+douban:
+  name: 豆瓣
+  type: social
+  weight: 0.6
+
+wallstreetcn:
+  name: 华尔街见闻
+  type: finance
+  weight: 0.2
+
+v2ex:
+  name: V2EX
+  type: tech
+  weight: 0.2
+
+sspai:
+  name: 少数派
+  type: tech
+  weight: 0.2
+
+coolapk:
+  name: 酷安
+  type: tech
+  weight: 0.2
+
+github:
+  name: GitHub
+  type: tech
+  weight: 0.2
