@@ -24,11 +24,29 @@ if _PROJECT_ROOT not in sys.path:
 from DeepSentimentCrawling.cookie_manager import CookieManager
 from DeepSentimentCrawling.alert import alert_cookie_expired
 
-# MC 的 config（包）和 var / main 直接 import 即可，
+# MC 的 config（包）和 var 直接 import 即可，
 # 项目根的 config.py 已重命名为 ms_config.py，不再冲突。
+# 注意：不能 `from main import CrawlerFactory`，因为项目根也有 main.py 会抢先。
+# 直接 import 各平台 crawler 类，绕开 MC 的 main.py。
 import config as mc_config
 from var import source_keyword_var, topic_id_var, crawling_task_id_var
-from main import CrawlerFactory
+from media_platform.bilibili import BilibiliCrawler
+from media_platform.douyin import DouYinCrawler
+from media_platform.kuaishou import KuaishouCrawler
+from media_platform.tieba import TieBaCrawler
+from media_platform.weibo import WeiboCrawler
+from media_platform.xhs import XiaoHongShuCrawler
+from media_platform.zhihu import ZhihuCrawler
+
+_CRAWLERS = {
+    "xhs": XiaoHongShuCrawler,
+    "dy": DouYinCrawler,
+    "ks": KuaishouCrawler,
+    "bili": BilibiliCrawler,
+    "wb": WeiboCrawler,
+    "tieba": TieBaCrawler,
+    "zhihu": ZhihuCrawler,
+}
 
 
 def _save_config() -> dict:
@@ -91,7 +109,10 @@ class PlatformWorker:
             crawling_task_id_var.set(task_id)
 
             # 5. 创建并运行 crawler
-            crawler = CrawlerFactory.create_crawler(platform)
+            crawler_cls = _CRAWLERS.get(platform)
+            if not crawler_cls:
+                return {"status": "failed", "error": f"不支持的平台: {platform}"}
+            crawler = crawler_cls()
 
             logger.info(
                 f"[Worker] 开始执行任务 {task_id}: "
