@@ -6,34 +6,59 @@ PlatformWorker — 在进程内调用 MediaCrawler 执行单个爬取任务
 每个任务执行前设置 ContextVar 以便 store 层写入 topic_id 和 crawling_task_id。
 """
 
+import importlib
+import importlib.util
 import sys
 from pathlib import Path
 from typing import Optional
 
 from loguru import logger
 
-# 项目根必须在 MediaCrawler 之前，否则 config 会解析到 MediaCrawler/config
 _PROJECT_ROOT = str(Path(__file__).parent.parent)
-_MC_ROOT = str(Path(__file__).parent / "MediaCrawler")
-for p in [_MC_ROOT, _PROJECT_ROOT]:
-    if p in sys.path:
-        sys.path.remove(p)
-sys.path.insert(0, _MC_ROOT)
-sys.path.insert(0, _PROJECT_ROOT)
+_MC_ROOT = Path(__file__).parent / "MediaCrawler"
+
+# 确保 MediaCrawler 在 sys.path 中（crawler 内部依赖需要）
+if str(_MC_ROOT) not in sys.path:
+    sys.path.append(str(_MC_ROOT))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
 from DeepSentimentCrawling.cookie_manager import CookieManager
 from DeepSentimentCrawling.alert import alert_cookie_expired
 
 
+def _load_mc_module(name: str):
+    """按文件路径加载 MediaCrawler 模块，避免被项目根同名模块截胡"""
+    if name in ("config",):
+        # MediaCrawler/config 是包（目录）
+        init_path = _MC_ROOT / name / "__init__.py"
+    else:
+        init_path = _MC_ROOT / f"{name}.py"
+
+    # 如果已经从 MediaCrawler 正确加载过，直接复用
+    mod = sys.modules.get(f"mc_{name}")
+    if mod is not None:
+        return mod
+
+    spec = importlib.util.spec_from_file_location(
+        f"mc_{name}", str(init_path),
+        submodule_search_locations=[str(_MC_ROOT / name)] if init_path.name == "__init__.py" else None,
+    )
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[f"mc_{name}"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def _save_config() -> dict:
     """快照 MediaCrawler config 模块的所有大写属性"""
-    import config as mc_config
+    mc_config = _load_mc_module("config")
     return {k: getattr(mc_config, k) for k in dir(mc_config) if k.isupper()}
 
 
 def _restore_config(saved: dict) -> None:
     """恢复 MediaCrawler config 模块到快照状态"""
-    import config as mc_config
+    mc_config = _load_mc_module("config")
     for k, v in saved.items():
         setattr(mc_config, k, v)
 
@@ -70,7 +95,7 @@ class PlatformWorker:
 
         try:
             # 3. 覆写 config 为当前任务参数
-            import config as mc_config
+            mc_config = _load_mc_module("config")
             mc_config.PLATFORM = platform
             mc_config.KEYWORDS = ",".join(task.get("search_keywords", []))
             mc_config.CRAWLER_MAX_NOTES_COUNT = task.get("max_notes", 20)
@@ -83,14 +108,14 @@ class PlatformWorker:
             mc_config.ENABLE_GET_MEIDAS = False
 
             # 4. 设置 ContextVar
-            from var import source_keyword_var, topic_id_var, crawling_task_id_var
-            source_keyword_var.set(task.get("topic_title", ""))
-            topic_id_var.set(candidate_id)
-            crawling_task_id_var.set(task_id)
+            mc_var = _load_mc_module("var")
+            mc_var.source_keyword_var.set(task.get("topic_title", ""))
+            mc_var.topic_id_var.set(candidate_id)
+            mc_var.crawling_task_id_var.set(task_id)
 
             # 5. 创建并运行 crawler
-            from main import CrawlerFactory
-            crawler = CrawlerFactory.create_crawler(platform)
+            mc_main = _load_mc_module("main")
+            crawler = mc_main.CrawlerFactory.create_crawler(platform)
 
             logger.info(
                 f"[Worker] 开始执行任务 {task_id}: "
