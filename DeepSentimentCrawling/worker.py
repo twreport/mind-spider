@@ -91,7 +91,7 @@ class PlatformWorker:
             mc_config.PLATFORM = platform
             mc_config.KEYWORDS = ",".join(task.get("search_keywords", []))
             mc_config.CRAWLER_MAX_NOTES_COUNT = task.get("max_notes", 20)
-            mc_config.SAVE_DATA_OPTION = "postgresql"
+            mc_config.SAVE_DATA_OPTION = "db"
             mc_config.LOGIN_TYPE = "cookie"
             mc_config.COOKIES = CookieManager.format_cookies_for_config(cookies)
             mc_config.HEADLESS = True

@@ -11,12 +11,12 @@
 
 import os
 
-# mysql config - 使用MindSpider的数据库配置
-MYSQL_DB_PWD = "bettafish"
-MYSQL_DB_USER = "bettafish"
-MYSQL_DB_HOST = "127.0.0.1"
-MYSQL_DB_PORT = 5444
-MYSQL_DB_NAME = "bettafish"
+# mysql config - 从环境变量读取，与项目 .env 保持一致
+MYSQL_DB_PWD = os.getenv("DB_PASSWORD", "bettafish")
+MYSQL_DB_USER = os.getenv("DB_USER", "bettafish")
+MYSQL_DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
+MYSQL_DB_PORT = int(os.getenv("DB_PORT", "3306"))
+MYSQL_DB_NAME = os.getenv("DB_NAME", "bettafish")
 
 mysql_db_config = {
     "user": MYSQL_DB_USER,
@@ -44,12 +44,12 @@ sqlite_db_config = {
     "db_path": SQLITE_DB_PATH
 }
 
-# postgresql config - 使用MindSpider的数据库配置（如果DB_DIALECT是postgresql）或环境变量
-POSTGRESQL_DB_PWD = os.getenv("POSTGRESQL_DB_PWD", "bettafish")
-POSTGRESQL_DB_USER = os.getenv("POSTGRESQL_DB_USER", "bettafish")
-POSTGRESQL_DB_HOST = os.getenv("POSTGRESQL_DB_HOST", "127.0.0.1")
-POSTGRESQL_DB_PORT = os.getenv("POSTGRESQL_DB_PORT", "5444")
-POSTGRESQL_DB_NAME = os.getenv("POSTGRESQL_DB_NAME", "bettafish")
+# postgresql config - 从环境变量读取
+POSTGRESQL_DB_PWD = os.getenv("DB_PASSWORD", "bettafish")
+POSTGRESQL_DB_USER = os.getenv("DB_USER", "bettafish")
+POSTGRESQL_DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
+POSTGRESQL_DB_PORT = os.getenv("DB_PORT", "5432")
+POSTGRESQL_DB_NAME = os.getenv("DB_NAME", "bettafish")
 
 postgresql_db_config = {
     "user": POSTGRESQL_DB_USER,
