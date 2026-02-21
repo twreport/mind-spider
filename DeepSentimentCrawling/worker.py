@@ -91,7 +91,7 @@ class PlatformWorker:
             mc_config.PLATFORM = platform
             mc_config.KEYWORDS = ",".join(task.get("search_keywords", []))
             mc_config.CRAWLER_MAX_NOTES_COUNT = task.get("max_notes", 20)
-            mc_config.SAVE_DATA_OPTION = "db"
+            mc_config.SAVE_DATA_OPTION = "postgresql"
             mc_config.LOGIN_TYPE = "cookie"
             mc_config.COOKIES = CookieManager.format_cookies_for_config(cookies)
             mc_config.HEADLESS = True
@@ -123,7 +123,7 @@ class PlatformWorker:
             return {"status": "success"}
 
         except Exception as e:
-            error_msg = str(e)
+            error_msg = f"{type(e).__name__}: {e}"
             logger.error(f"[Worker] 任务 {task_id} 执行失败: {error_msg}")
 
             # 检查是否为 cookie 过期相关错误（只检查错误前 200 字符，避免 Chrome 启动参数误匹配）
