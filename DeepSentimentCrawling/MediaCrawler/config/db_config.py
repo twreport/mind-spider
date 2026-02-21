@@ -10,6 +10,15 @@
 
 
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# 加载项目根目录的 .env，使 os.getenv() 能读到数据库凭据
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_env_file = _PROJECT_ROOT / ".env"
+if _env_file.exists():
+    load_dotenv(_env_file)
 
 # mysql config - 从环境变量读取，与项目 .env 保持一致
 MYSQL_DB_PWD = os.getenv("DB_PASSWORD", "bettafish")
