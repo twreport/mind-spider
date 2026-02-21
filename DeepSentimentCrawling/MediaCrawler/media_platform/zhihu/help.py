@@ -11,12 +11,14 @@
 
 # -*- coding: utf-8 -*-
 import json
+import os
 from typing import Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 import execjs
 from parsel import Selector
 
+import config
 from constant import zhihu as zhihu_constant
 from model.m_zhihu import ZhihuComment, ZhihuContent, ZhihuCreator
 from tools import utils
@@ -37,7 +39,7 @@ def sign(url: str, cookies: str) -> Dict:
     """
     global ZHIHU_SGIN_JS
     if not ZHIHU_SGIN_JS:
-        with open("libs/zhihu.js", mode="r", encoding="utf-8-sig") as f:
+        with open(os.path.join(config.LIBS_DIR, "zhihu.js"), mode="r", encoding="utf-8-sig") as f:
             ZHIHU_SGIN_JS = execjs.compile(f.read())
 
     return ZHIHU_SGIN_JS.call("get_sign", url, cookies)

@@ -15,6 +15,7 @@
 # @Time    : 2024/6/10 02:24
 # @Desc    : 获取 a_bogus 参数, 学习交流使用，请勿用作商业用途，侵权联系作者删除
 
+import os
 import random
 import re
 from typing import Optional
@@ -22,10 +23,11 @@ from typing import Optional
 import execjs
 from playwright.async_api import Page
 
+import config
 from model.m_douyin import VideoUrlInfo, CreatorUrlInfo
 from tools.crawler_util import extract_url_params_to_dict
 
-douyin_sign_obj = execjs.compile(open('libs/douyin.js', encoding='utf-8-sig').read())
+douyin_sign_obj = execjs.compile(open(os.path.join(config.LIBS_DIR, 'douyin.js'), encoding='utf-8-sig').read())
 
 def get_web_id():
     """

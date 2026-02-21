@@ -248,10 +248,12 @@ class CDPBrowserManager:
 
         return browser_context
 
-    async def add_stealth_script(self, script_path: str = "libs/stealth.min.js"):
+    async def add_stealth_script(self, script_path: str = None):
         """
         添加反检测脚本
         """
+        if script_path is None:
+            script_path = os.path.join(config.LIBS_DIR, "stealth.min.js")
         if self.browser_context and os.path.exists(script_path):
             try:
                 await self.browser_context.add_init_script(path=script_path)
