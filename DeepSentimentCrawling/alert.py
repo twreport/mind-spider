@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-告警服务 — 通过 Server酱 推送告警消息
+告警服务 — 通过 Server酱3 推送告警消息
 
 支持 cookie 过期告警和熔断器告警，带平台级速率限制（每平台 5 分钟最多 1 条）。
 """
@@ -8,7 +8,6 @@
 import time
 from typing import Optional
 
-import httpx
 from loguru import logger
 
 import sys
@@ -34,10 +33,10 @@ def _should_rate_limit(platform: str) -> bool:
 
 def send_alert(title: str, content: str, platform: Optional[str] = None) -> bool:
     """
-    发送 Server酱 告警
+    发送 Server酱3 告警
 
     Args:
-        title: 告警标题（最多 32 字符）
+        title: 告警标题
         content: 告警正文（支持 Markdown）
         platform: 可选平台名，用于速率限制
 
@@ -53,16 +52,18 @@ def send_alert(title: str, content: str, platform: Optional[str] = None) -> bool
         logger.debug(f"[Alert] 平台 {platform} 告警速率限制中，跳过")
         return False
 
-    url = f"https://sctapi.ftqq.com/{key}.send"
     try:
-        resp = httpx.post(url, data={"title": title[:32], "desp": content}, timeout=10)
-        data = resp.json()
-        if data.get("code") == 0:
+        from serverchan_sdk import sc_send
+        resp = sc_send(key, title, content, {"tags": "MindSpider|深层采集"})
+        if resp.get("code") == 0:
             logger.info(f"[Alert] 告警发送成功: {title}")
             return True
         else:
-            logger.warning(f"[Alert] 告警发送失败: {data}")
+            logger.warning(f"[Alert] 告警发送失败: {resp}")
             return False
+    except ImportError:
+        logger.error("[Alert] serverchan-sdk 未安装，请运行: pip install serverchan-sdk")
+        return False
     except Exception as e:
         logger.error(f"[Alert] 告警发送异常: {e}")
         return False

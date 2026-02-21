@@ -91,6 +91,7 @@ dependencies = [
     "parsel>=1.9.1",
     "pyexecjs>=1.5.1",
     "pyhumps>=3.8.0",
+    "serverchan-sdk>=0.1.0",
 
     # Visualization (optional)
     "wordcloud>=1.9.0",
