@@ -16,7 +16,7 @@
 from typing import List
 
 import config
-from var import source_keyword_var
+from var import source_keyword_var, topic_id_var, crawling_task_id_var
 
 from ._store_impl import *
 from .bilibilli_store_media import *
@@ -67,6 +67,8 @@ async def update_bilibili_video(video_item: Dict):
         "video_url": f"https://www.bilibili.com/video/av{video_id}",
         "video_cover_url": video_item_view.get("pic", ""),
         "source_keyword": source_keyword_var.get(),
+        "topic_id": topic_id_var.get(),
+        "crawling_task_id": crawling_task_id_var.get(),
     }
     utils.logger.info(f"[store.bilibili.update_bilibili_video] bilibili video id:{video_id}, title:{save_content_item.get('title')}")
     await BiliStoreFactory.create_store().store_content(content_item=save_content_item)

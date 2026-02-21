@@ -16,7 +16,7 @@
 from typing import List
 
 import config
-from var import source_keyword_var
+from var import source_keyword_var, topic_id_var, crawling_task_id_var
 
 from ._store_impl import *
 
@@ -61,6 +61,8 @@ async def update_kuaishou_video(video_item: Dict):
         "video_cover_url": photo_info.get("coverUrl", ""),
         "video_play_url": photo_info.get("photoUrl", ""),
         "source_keyword": source_keyword_var.get(),
+        "topic_id": topic_id_var.get(),
+        "crawling_task_id": crawling_task_id_var.get(),
     }
     utils.logger.info(
         f"[store.kuaishou.update_kuaishou_video] Kuaishou video id:{video_id}, title:{save_content_item.get('title')}")

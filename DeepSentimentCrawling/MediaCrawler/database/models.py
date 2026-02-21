@@ -28,6 +28,8 @@ class BilibiliVideo(Base):
     video_comment = Column(Text)
     video_cover_url = Column(Text)
     source_keyword = Column(Text, default='')
+    topic_id = Column(String(64), default='', index=True)
+    crawling_task_id = Column(String(64), default='', index=True)
 
 class BilibiliVideoComment(Base):
     __tablename__ = 'bilibili_video_comment'
@@ -119,6 +121,8 @@ class DouyinAweme(Base):
     music_download_url = Column(Text)
     note_download_url = Column(Text)
     source_keyword = Column(Text, default='')
+    topic_id = Column(String(64), default='', index=True)
+    crawling_task_id = Column(String(64), default='', index=True)
 
 class DouyinAwemeComment(Base):
     __tablename__ = 'douyin_aweme_comment'
@@ -177,6 +181,8 @@ class KuaishouVideo(Base):
     video_cover_url = Column(Text)
     video_play_url = Column(Text)
     source_keyword = Column(Text, default='')
+    topic_id = Column(String(64), default='', index=True)
+    crawling_task_id = Column(String(64), default='', index=True)
 
 class KuaishouVideoComment(Base):
     __tablename__ = 'kuaishou_video_comment'
@@ -212,6 +218,8 @@ class WeiboNote(Base):
     shared_count = Column(Text)
     note_url = Column(Text)
     source_keyword = Column(Text, default='')
+    topic_id = Column(String(64), default='', index=True)
+    crawling_task_id = Column(String(64), default='', index=True)
 
 class WeiboNoteComment(Base):
     __tablename__ = 'weibo_note_comment'
@@ -288,6 +296,8 @@ class XhsNote(Base):
     tag_list = Column(Text)
     note_url = Column(Text)
     source_keyword = Column(Text, default='')
+    topic_id = Column(String(64), default='', index=True)
+    crawling_task_id = Column(String(64), default='', index=True)
     xsec_token = Column(Text)
 
 class XhsNoteComment(Base):
@@ -328,6 +338,8 @@ class TiebaNote(Base):
     add_ts = Column(BigInteger)
     last_modify_ts = Column(BigInteger)
     source_keyword = Column(Text, default='')
+    topic_id = Column(String(64), default='', index=True)
+    crawling_task_id = Column(String(64), default='', index=True)
 
 class TiebaComment(Base):
     __tablename__ = 'tieba_comment'
@@ -379,6 +391,8 @@ class ZhihuContent(Base):
     voteup_count = Column(Integer, default=0)
     comment_count = Column(Integer, default=0)
     source_keyword = Column(Text)
+    topic_id = Column(String(64), default='', index=True)
+    crawling_task_id = Column(String(64), default='', index=True)
     user_id = Column(String(255))
     user_link = Column(Text)
     user_nickname = Column(Text)

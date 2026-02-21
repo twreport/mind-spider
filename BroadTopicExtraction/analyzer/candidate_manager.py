@@ -29,6 +29,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from config import settings
 
 COLLECTION = "candidates"
+CRAWL_TASKS_COLLECTION = "crawl_tasks"
+
+# 表层采集平台名 → 深层采集平台代码
+_SURFACE_TO_DEEP = {
+    "weibo": "wb", "bilibili": "bili", "douyin": "dy",
+    "zhihu": "zhihu", "kuaishou": "ks", "tieba": "tieba",
+    "xiaohongshu": "xhs", "xhs": "xhs",
+}
+
+# 按候选状态定义爬取规模
+_CRAWL_SCALE = {
+    "rising":    {"platforms": 3, "max_notes": 10, "priority": 1},
+    "confirmed": {"platforms": 5, "max_notes": 30, "priority": 2},
+    "exploded":  {"platforms": 7, "max_notes": 50, "priority": 3},
+}
 
 # 加载平台权重（从 platforms.yaml）
 _PLATFORMS_YAML = Path(__file__).parent.parent / "config" / "platforms.yaml"
@@ -340,6 +355,70 @@ class CandidateManager:
             f"[Candidate] {candidate['canonical_title'][:30]} "
             f"{old_status} → {new_status} ({reason})"
         )
+        # 状态跃迁到 rising/confirmed/exploded 时生成爬取任务
+        if new_status in _CRAWL_SCALE:
+            self._emit_crawl_tasks(candidate, new_status, now)
+
+    def _emit_crawl_tasks(self, candidate: dict, status: str, now: int) -> None:
+        """根据候选状态生成深层采集任务并写入 crawl_tasks collection"""
+        scale = _CRAWL_SCALE.get(status)
+        if not scale:
+            return
+
+        # 从候选的平台列表映射到深层采集平台代码
+        deep_platforms = []
+        for plat in candidate.get("platforms", []):
+            code = _SURFACE_TO_DEEP.get(plat)
+            if code and code not in deep_platforms:
+                deep_platforms.append(code)
+
+        # 限制爬取平台数
+        deep_platforms = deep_platforms[:scale["platforms"]]
+        if not deep_platforms:
+            return
+
+        # 生成搜索关键词：canonical_title + 其他 source_titles（去重）
+        keywords = [candidate["canonical_title"]]
+        for t in candidate.get("source_titles", []):
+            if t and t != candidate["canonical_title"] and t not in keywords:
+                keywords.append(t)
+                if len(keywords) >= 3:
+                    break
+
+        cand_id = candidate["candidate_id"]
+        col = self.signal_writer.get_collection(CRAWL_TASKS_COLLECTION)
+
+        tasks_created = 0
+        for plat in deep_platforms:
+            # 去重：跳过已有活跃任务（pending/running）
+            existing = col.find_one({
+                "candidate_id": cand_id,
+                "platform": plat,
+                "status": {"$in": ["pending", "running"]},
+            })
+            if existing:
+                continue
+
+            task_doc = {
+                "task_id": f"ct_{cand_id}_{plat}_{now}",
+                "candidate_id": cand_id,
+                "topic_title": candidate["canonical_title"],
+                "search_keywords": keywords,
+                "platform": plat,
+                "max_notes": scale["max_notes"],
+                "priority": scale["priority"],
+                "status": "pending",
+                "created_at": now,
+                "attempts": 0,
+            }
+            col.insert_one(task_doc)
+            tasks_created += 1
+
+        if tasks_created:
+            logger.info(
+                f"[Candidate] 为 {candidate['canonical_title'][:20]} "
+                f"生成 {tasks_created} 个爬取任务 (status={status})"
+            )
 
     # ==================== 持久化 ====================
 

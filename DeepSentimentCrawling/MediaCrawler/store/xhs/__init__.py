@@ -15,7 +15,7 @@
 from typing import List
 
 import config
-from var import source_keyword_var
+from var import source_keyword_var, topic_id_var, crawling_task_id_var
 
 from .xhs_store_media import *
 from ._store_impl import *
@@ -107,6 +107,8 @@ async def update_xhs_note(note_item: Dict):
         "last_modify_ts": utils.get_current_timestamp(),  # 最后更新时间戳（MediaCrawler程序生成的，主要用途在db存储的时候记录一条记录最新更新时间）
         "note_url": f"https://www.xiaohongshu.com/explore/{note_id}?xsec_token={note_item.get('xsec_token')}&xsec_source=pc_search",  # 帖子url
         "source_keyword": source_keyword_var.get(),  # 搜索关键词
+        "topic_id": topic_id_var.get(),
+        "crawling_task_id": crawling_task_id_var.get(),
         "xsec_token": note_item.get("xsec_token"),  # xsec_token
     }
     utils.logger.info(f"[store.xhs.update_xhs_note] xhs note: {local_db_item}")

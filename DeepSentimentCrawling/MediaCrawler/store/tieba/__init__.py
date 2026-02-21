@@ -13,7 +13,7 @@
 from typing import List
 
 from model.m_baidu_tieba import TiebaComment, TiebaCreator, TiebaNote
-from var import source_keyword_var
+from var import source_keyword_var, topic_id_var, crawling_task_id_var
 
 from ._store_impl import *
 
@@ -62,7 +62,11 @@ async def update_tieba_note(note_item: TiebaNote):
     """
     note_item.source_keyword = source_keyword_var.get()
     save_note_item = note_item.model_dump()
-    save_note_item.update({"last_modify_ts": utils.get_current_timestamp()})
+    save_note_item.update({
+        "last_modify_ts": utils.get_current_timestamp(),
+        "topic_id": topic_id_var.get(),
+        "crawling_task_id": crawling_task_id_var.get(),
+    })
     utils.logger.info(f"[store.tieba.update_tieba_note] tieba note: {save_note_item}")
 
     await TieBaStoreFactory.create_store().store_content(save_note_item)

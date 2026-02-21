@@ -15,7 +15,7 @@
 from typing import List
 
 import config
-from var import source_keyword_var
+from var import source_keyword_var, topic_id_var, crawling_task_id_var
 
 from ._store_impl import *
 from .douyin_store_media import *
@@ -171,6 +171,8 @@ async def update_douyin_aweme(aweme_item: Dict):
         "music_download_url": _extract_music_download_url(aweme_item),
         "note_download_url": ",".join(_extract_note_image_list(aweme_item)),
         "source_keyword": source_keyword_var.get(),
+        "topic_id": topic_id_var.get(),
+        "crawling_task_id": crawling_task_id_var.get(),
     }
     utils.logger.info(f"[store.douyin.update_douyin_aweme] douyin aweme id:{aweme_id}, title:{save_content_item.get('title')}")
     await DouyinStoreFactory.create_store().store_content(content_item=save_content_item)

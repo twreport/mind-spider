@@ -20,7 +20,7 @@ from ._store_impl import (ZhihuCsvStoreImplement,
                                           ZhihuJsonStoreImplement,
                                           ZhihuSqliteStoreImplement)
 from tools import utils
-from var import source_keyword_var
+from var import source_keyword_var, topic_id_var, crawling_task_id_var
 
 
 class ZhihuStoreFactory:
@@ -65,7 +65,11 @@ async def update_zhihu_content(content_item: ZhihuContent):
     """
     content_item.source_keyword = source_keyword_var.get()
     local_db_item = content_item.model_dump()
-    local_db_item.update({"last_modify_ts": utils.get_current_timestamp()})
+    local_db_item.update({
+        "last_modify_ts": utils.get_current_timestamp(),
+        "topic_id": topic_id_var.get(),
+        "crawling_task_id": crawling_task_id_var.get(),
+    })
     utils.logger.info(f"[store.zhihu.update_zhihu_content] zhihu content: {local_db_item}")
     await ZhihuStoreFactory.create_store().store_content(local_db_item)
 

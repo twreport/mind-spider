@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     MINDSPIDER_BASE_URL: Optional[str] = Field("https://api.deepseek.com", description="MINDSPIDER API基础URL，推荐deepseek-chat模型使用https://api.deepseek.com")
     MINDSPIDER_MODEL_NAME: Optional[str] = Field("deepseek-chat", description="MINDSPIDER API模型名称, 推荐deepseek-chat")
 
+    # 深层采集服务配置
+    SERVERCHAN_KEY: str = Field("", description="Server酱 SendKey，用于 cookie 过期等告警推送")
+    LOGIN_CONSOLE_PORT: int = Field(8777, description="登录控制台端口")
+    LOGIN_CONSOLE_TOKEN: str = Field("", description="登录控制台访问令牌")
+
     class Config:
         env_file = ENV_FILE
         env_prefix = ""
