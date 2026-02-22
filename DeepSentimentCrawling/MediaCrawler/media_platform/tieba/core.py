@@ -107,6 +107,9 @@ class TieBaCrawler(AbstractCrawler):
                 utils.logger.info("[BaiduTieBaCrawler] Cookie 模式，已注入 cookie，直接访问贴吧首页")
                 await self.context_page.goto(self.index_url, wait_until="domcontentloaded")
                 await asyncio.sleep(2)
+                # 检查首页是否正常加载
+                page_title = await self.context_page.title()
+                utils.logger.info(f"[BaiduTieBaCrawler] 贴吧首页 title: {page_title}, URL: {self.context_page.url}")
             else:
                 # 非 cookie 模式：通过百度首页跳转，降低安全验证概率
                 await self._navigate_to_tieba_via_baidu()

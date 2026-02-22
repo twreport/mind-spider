@@ -234,7 +234,6 @@ class BaiduTieBaClient(AbstractApiClient):
             raise Exception("playwright_page is required for browser-based search")
 
         # 构造搜索URL
-        # 示例: https://tieba.baidu.com/f/search/res?ie=utf-8&qw=编程
         search_url = f"{self._host}/f/search/res"
         params = {
             "ie": "utf-8",
@@ -244,17 +243,72 @@ class BaiduTieBaClient(AbstractApiClient):
             "sm": sort.value,
             "only_thread": note_type.value,
         }
-
-        # 拼接完整URL
         full_url = f"{search_url}?{urlencode(params)}"
-        utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] 访问搜索页面: {full_url}")
+        utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] 搜索: {keyword}, page={page}")
 
         try:
-            # 使用Playwright访问搜索页面
-            await self.playwright_page.goto(full_url, wait_until="domcontentloaded")
+            # 第一页：通过贴吧首页搜索框提交，模拟真实用户行为，避免安全验证
+            if page == 1:
+                utils.logger.info("[BaiduTieBaClient.get_notes_by_keyword] 使用搜索框提交搜索")
+                # 确保在贴吧首页
+                current_url = self.playwright_page.url
+                if "tieba.baidu.com" not in current_url or "/f/search/" in current_url:
+                    await self.playwright_page.goto(f"{self._host}/", wait_until="domcontentloaded")
+                    await asyncio.sleep(2)
 
-            # 等待页面加载,使用配置文件中的延时设置
-            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                # 尝试找到搜索框并输入关键词
+                search_input = None
+                for selector in [
+                    'input#q_word',                    # 经典版搜索框
+                    'input.search_input',              # 搜索输入框
+                    'input[name="kw"]',                # 按 name 找
+                    'input[name="qw"]',                # 搜索关键词
+                    'input[type="text"]',              # 兜底
+                ]:
+                    try:
+                        el = self.playwright_page.locator(selector).first
+                        if await el.is_visible(timeout=2000):
+                            search_input = el
+                            utils.logger.info(f"[BaiduTieBaClient] 找到搜索框: {selector}")
+                            break
+                    except Exception:
+                        continue
+
+                if search_input:
+                    await search_input.click()
+                    await search_input.fill(keyword)
+                    await asyncio.sleep(0.5)
+
+                    # 尝试点击搜索按钮或按回车
+                    submitted = False
+                    for btn_selector in [
+                        'button.search_btn',
+                        'input[type="submit"]',
+                        'a.search_btn_wrap',
+                    ]:
+                        try:
+                            btn = self.playwright_page.locator(btn_selector).first
+                            if await btn.is_visible(timeout=1000):
+                                await btn.click()
+                                submitted = True
+                                break
+                        except Exception:
+                            continue
+                    if not submitted:
+                        await search_input.press("Enter")
+
+                    # 等待搜索结果页加载
+                    await self.playwright_page.wait_for_load_state("domcontentloaded")
+                    await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                else:
+                    # 搜索框找不到，回退到直接导航
+                    utils.logger.warning("[BaiduTieBaClient] 未找到搜索框，回退到直接导航")
+                    await self.playwright_page.goto(full_url, wait_until="domcontentloaded")
+                    await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+            else:
+                # 翻页：直接导航到对应页码
+                await self.playwright_page.goto(full_url, wait_until="domcontentloaded")
+                await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
 
             # 获取页面HTML内容
             page_content = await self.playwright_page.content()
