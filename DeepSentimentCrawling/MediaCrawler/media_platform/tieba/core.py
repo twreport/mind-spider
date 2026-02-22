@@ -95,7 +95,7 @@ class TieBaCrawler(AbstractCrawler):
 
             self.context_page = await self.browser_context.new_page()
 
-            # 在导航前注入 cookie，确保浏览器以已登录状态访问百度/贴吧
+            # cookie 模式：注入 cookie 后直接访问贴吧，无需绕道百度首页
             if config.LOGIN_TYPE == "cookie" and config.COOKIES:
                 for key, value in utils.convert_str_cookie_to_dict(config.COOKIES).items():
                     await self.browser_context.add_cookies([{
@@ -104,10 +104,12 @@ class TieBaCrawler(AbstractCrawler):
                         'domain': ".baidu.com",
                         'path': "/"
                     }])
-                utils.logger.info("[BaiduTieBaCrawler] 已在导航前注入 cookie 到 .baidu.com")
-
-            # 先访问百度首页,再点击贴吧链接,避免触发安全验证
-            await self._navigate_to_tieba_via_baidu()
+                utils.logger.info("[BaiduTieBaCrawler] Cookie 模式，已注入 cookie，直接访问贴吧首页")
+                await self.context_page.goto(self.index_url, wait_until="domcontentloaded")
+                await asyncio.sleep(2)
+            else:
+                # 非 cookie 模式：通过百度首页跳转，降低安全验证概率
+                await self._navigate_to_tieba_via_baidu()
 
             # Create a client to interact with the baidutieba website.
             self.tieba_client = await self.create_tieba_client(
@@ -117,8 +119,8 @@ class TieBaCrawler(AbstractCrawler):
 
             # Check login status and perform login if necessary
             if config.LOGIN_TYPE == "cookie" and config.COOKIES:
-                # cookie 模式：已在导航前注入，跳过 pong/login 流程
-                utils.logger.info("[BaiduTieBaCrawler] Cookie 模式，跳过 pong/login，直接使用已注入的 cookie")
+                # cookie 模式：跳过 pong/login
+                utils.logger.info("[BaiduTieBaCrawler] Cookie 模式，跳过 pong/login")
                 await self.tieba_client.update_cookies(browser_context=self.browser_context)
             elif not await self.tieba_client.pong(browser_context=self.browser_context):
                 login_obj = BaiduTieBaLogin(
