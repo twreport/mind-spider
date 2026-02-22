@@ -94,7 +94,7 @@ async function exportCookies(platformCode, cookieDomain, triggerEl) {
       throw new Error("未找到 Cookie，请先在浏览器中登录该平台");
     }
 
-    const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join("; ");
+    const cookieStr = cookies.filter(c => c.name).map(c => `${c.name}=${c.value}`).join("; ");
 
     // 发送到服务器
     const url = `${cfg.serverUrl}/login/${platformCode}/paste?token=${encodeURIComponent(cfg.token || "")}`;
