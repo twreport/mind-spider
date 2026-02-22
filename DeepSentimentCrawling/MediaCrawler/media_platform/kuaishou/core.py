@@ -131,6 +131,7 @@ class KuaishouCrawler(AbstractCrawler):
         ks_limit_count = 20  # kuaishou limit page fixed value
         if config.CRAWLER_MAX_NOTES_COUNT < ks_limit_count:
             config.CRAWLER_MAX_NOTES_COUNT = ks_limit_count
+        max_notes = config.CRAWLER_MAX_NOTES_COUNT
         start_page = config.START_PAGE
         for keyword in config.KEYWORDS.split(","):
             search_session_id = ""
@@ -141,7 +142,7 @@ class KuaishouCrawler(AbstractCrawler):
             page = 1
             while (
                 page - start_page + 1
-            ) * ks_limit_count <= config.CRAWLER_MAX_NOTES_COUNT:
+            ) * ks_limit_count <= max_notes:
                 if page < start_page:
                     utils.logger.info(f"[KuaishouCrawler.search] Skip page: {page}")
                     page += 1

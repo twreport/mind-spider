@@ -140,6 +140,7 @@ class ZhihuCrawler(AbstractCrawler):
         zhihu_limit_count = 20  # zhihu limit page fixed value
         if config.CRAWLER_MAX_NOTES_COUNT < zhihu_limit_count:
             config.CRAWLER_MAX_NOTES_COUNT = zhihu_limit_count
+        max_notes = config.CRAWLER_MAX_NOTES_COUNT
         start_page = config.START_PAGE
         for keyword in config.KEYWORDS.split(","):
             source_keyword_var.set(keyword)
@@ -149,7 +150,7 @@ class ZhihuCrawler(AbstractCrawler):
             page = 1
             while (
                 page - start_page + 1
-            ) * zhihu_limit_count <= config.CRAWLER_MAX_NOTES_COUNT:
+            ) * zhihu_limit_count <= max_notes:
                 if page < start_page:
                     utils.logger.info(f"[ZhihuCrawler.search] Skip page {page}")
                     page += 1

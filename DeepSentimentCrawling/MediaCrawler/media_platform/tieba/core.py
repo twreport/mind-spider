@@ -144,6 +144,7 @@ class TieBaCrawler(AbstractCrawler):
         tieba_limit_count = 10  # tieba limit page fixed value
         if config.CRAWLER_MAX_NOTES_COUNT < tieba_limit_count:
             config.CRAWLER_MAX_NOTES_COUNT = tieba_limit_count
+        max_notes = config.CRAWLER_MAX_NOTES_COUNT
         start_page = config.START_PAGE
         for keyword in config.KEYWORDS.split(","):
             source_keyword_var.set(keyword)
@@ -153,7 +154,7 @@ class TieBaCrawler(AbstractCrawler):
             page = 1
             while (
                 page - start_page + 1
-            ) * tieba_limit_count <= config.CRAWLER_MAX_NOTES_COUNT:
+            ) * tieba_limit_count <= max_notes:
                 if page < start_page:
                     utils.logger.info(f"[BaiduTieBaCrawler.search] Skip page {page}")
                     page += 1
@@ -203,12 +204,13 @@ class TieBaCrawler(AbstractCrawler):
         tieba_limit_count = 50
         if config.CRAWLER_MAX_NOTES_COUNT < tieba_limit_count:
             config.CRAWLER_MAX_NOTES_COUNT = tieba_limit_count
+        max_notes = config.CRAWLER_MAX_NOTES_COUNT
         for tieba_name in config.TIEBA_NAME_LIST:
             utils.logger.info(
                 f"[BaiduTieBaCrawler.get_specified_tieba_notes] Begin get tieba name: {tieba_name}"
             )
             page_number = 0
-            while page_number <= config.CRAWLER_MAX_NOTES_COUNT:
+            while page_number <= max_notes:
                 note_list: List[TiebaNote] = (
                     await self.tieba_client.get_notes_by_tieba_name(
                         tieba_name=tieba_name, page_num=page_number

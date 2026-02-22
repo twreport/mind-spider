@@ -201,6 +201,8 @@ class KuaiShouClient(AbstractApiClient):
             vision_commen_list = comments_res.get("visionCommentList", {})
             pcursor = vision_commen_list.get("pcursor", "")
             comments = vision_commen_list.get("rootComments", [])
+            if not comments:
+                break
             if len(result) + len(comments) > max_count:
                 comments = comments[: max_count - len(result)]
             if callback:  # 如果有回调函数，就执行回调函数
