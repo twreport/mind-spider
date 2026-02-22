@@ -474,46 +474,22 @@ async def poll_login(platform: str, token: str = Query("")):
 
         logged_in = False
 
-        # 抖音特殊处理：主动导航到首页检查登录状态
-        # headless 模式下页面内 JS 轮询可能不工作，改为主动导航检测
+        # 抖音特殊处理：页面留在登录页不动，检查 localStorage + cookies
+        # 注意：不能导航离开登录页，否则 QR 会话会断开
         if platform == "dy":
-            elapsed_so_far = int(time.time() - session["started_at"])
-            # 每 8 秒主动导航一次检查（前 8 秒让页面自身 JS 先尝试）
-            check_count = session.get("_dy_check_count", 0)
-            if elapsed_so_far > 8 and (elapsed_so_far // 8) > check_count:
-                session["_dy_check_count"] = elapsed_so_far // 8
-                page = session.get("page")
-                if page:
-                    try:
-                        logger.info(f"[LoginConsole] {platform} 主动导航到首页检测登录状态 (第{session['_dy_check_count']}次)")
-                        await page.goto("https://www.douyin.com", wait_until="domcontentloaded", timeout=15000)
-                        await page.wait_for_timeout(2000)
-                        # 重新获取 cookies
-                        cookies = await context.cookies()
-                        cookie_dict = {c["name"]: c["value"] for c in cookies}
-                        # 检查 localStorage
-                        for p in context.pages:
-                            try:
-                                local_storage = await p.evaluate("() => window.localStorage")
-                                if local_storage.get("HasUserLogin", "") == "1":
-                                    logger.info(f"[LoginConsole] {platform} 导航后检测到 HasUserLogin=1")
-                                    logged_in = True
-                                    break
-                            except Exception:
-                                continue
-                    except Exception as e:
-                        logger.debug(f"[LoginConsole] {platform} 主动导航失败: {e}")
-
-            # 也检查当前页面 localStorage（前 8 秒内）
-            if not logged_in:
-                for p in context.pages:
-                    try:
-                        local_storage = await p.evaluate("() => window.localStorage")
-                        if local_storage.get("HasUserLogin", "") == "1":
-                            logged_in = True
-                            break
-                    except Exception:
-                        continue
+            for p in context.pages:
+                try:
+                    local_storage = await p.evaluate("() => window.localStorage")
+                    if local_storage.get("HasUserLogin", "") == "1":
+                        logger.info(f"[LoginConsole] {platform} localStorage HasUserLogin=1")
+                        logged_in = True
+                        break
+                except Exception:
+                    continue
+            # 也检查 LOGIN_STATUS cookie 值是否为 "1"
+            if not logged_in and cookie_dict.get("LOGIN_STATUS") == "1":
+                logged_in = True
+                logger.info(f"[LoginConsole] {platform} cookie LOGIN_STATUS=1")
 
         # 通用检查：session cookie 是否出现
         if not logged_in and session_key in cookie_dict:
@@ -554,14 +530,10 @@ async def poll_login(platform: str, token: str = Query("")):
             logger.info(f"[LoginConsole] {platform} 登录成功，已保存 {len(cookie_dict)} 个 cookie")
             return JSONResponse({"status": "success"})
 
-        # 调试日志：每次轮询记录当前 cookie 数量和关键 cookie
+        # 调试日志
         elapsed = int(time.time() - session["started_at"])
-        key_cookies = {k: v[:20] for k, v in cookie_dict.items() if k in (
-            "LOGIN_STATUS", "HasUserLogin", "sessionid", "passport_csrf_token",
-            "passToken", "STOKEN", "PTOKEN", "BDUSS", "SSOLoginState", "WBPSESS",
-            "SESSDATA", "web_session", "z_c0",
-        )}
-        logger.debug(f"[LoginConsole] {platform} 轮询中 ({elapsed}s)，{len(cookie_dict)} cookie，关键: {key_cookies}")
+        cookie_names = sorted(cookie_dict.keys())
+        logger.debug(f"[LoginConsole] {platform} 轮询中 ({elapsed}s)，{len(cookie_dict)} cookie: {cookie_names}")
 
         # 检查超时（5 分钟）
         if elapsed > 300:
