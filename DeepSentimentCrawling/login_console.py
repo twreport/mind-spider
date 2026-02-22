@@ -198,6 +198,7 @@ async def login_page(platform: str, token: str = Query("")):
     <body>
         <h1>{platform_name} 扫码登录</h1>
         <p>请用 {platform_name} APP 扫描下方二维码（长按图片可保存到相册）</p>
+        <p class="tip" style="color: #e8a339; font-weight: bold;">扫码后请在手机上点击「确认登录」</p>
 
         <div id="qr-container">
             <p class="loading">正在获取二维码...</p>
@@ -462,20 +463,43 @@ async def poll_login(platform: str, token: str = Query("")):
 
         logged_in = False
 
-        # 抖音特殊处理：优先检查 localStorage
+        # 抖音特殊处理：检查所有页面的 localStorage + 主动刷新
         if platform == "dy":
-            page = session.get("page")
-            if page:
+            for p in context.pages:
                 try:
-                    local_storage = await page.evaluate("() => window.localStorage")
+                    local_storage = await p.evaluate("() => window.localStorage")
                     has_user_login = local_storage.get("HasUserLogin", "")
                     if has_user_login == "1":
                         logger.info(f"[LoginConsole] {platform} localStorage HasUserLogin=1，检测到登录")
                         logged_in = True
-                    else:
-                        logger.debug(f"[LoginConsole] {platform} localStorage HasUserLogin={has_user_login!r}")
-                except Exception as e:
-                    logger.debug(f"[LoginConsole] {platform} 读取 localStorage 失败: {e}")
+                        break
+                except Exception:
+                    continue
+
+            # 等待超过 15 秒后，主动刷新页面触发 cookie 同步
+            elapsed_so_far = int(time.time() - session["started_at"])
+            if not logged_in and elapsed_so_far > 15 and not session.get("_dy_refreshed"):
+                page = session.get("page")
+                if page:
+                    try:
+                        logger.info(f"[LoginConsole] {platform} 主动刷新页面检测登录状态")
+                        await page.reload(wait_until="domcontentloaded", timeout=15000)
+                        await page.wait_for_timeout(3000)
+                        session["_dy_refreshed"] = True
+                        # 刷新后重新获取 cookies
+                        cookies = await context.cookies()
+                        cookie_dict = {c["name"]: c["value"] for c in cookies}
+                        # 再检查一次 localStorage
+                        for p in context.pages:
+                            try:
+                                local_storage = await p.evaluate("() => window.localStorage")
+                                if local_storage.get("HasUserLogin", "") == "1":
+                                    logged_in = True
+                                    break
+                            except Exception:
+                                continue
+                    except Exception as e:
+                        logger.debug(f"[LoginConsole] {platform} 主动刷新失败: {e}")
 
         # 通用检查：session cookie 是否出现
         if not logged_in and session_key in cookie_dict:
@@ -489,18 +513,18 @@ async def poll_login(platform: str, token: str = Query("")):
                 logger.info(f"[LoginConsole] {platform} 检测到备选 cookie (PTOKEN/BDUSS)")
 
         if logged_in:
-            # 抖音登录成功后刷新页面，等待 cookie 同步
+            # 抖音登录成功后导航到首页，确保所有 cookie 同步
             if platform == "dy":
                 page = session.get("page")
                 if page:
                     try:
-                        await page.reload(wait_until="domcontentloaded", timeout=10000)
+                        await page.goto("https://www.douyin.com", wait_until="domcontentloaded", timeout=15000)
                         await page.wait_for_timeout(3000)
                         # 重新获取 cookies
                         cookies = await context.cookies()
                         cookie_dict = {c["name"]: c["value"] for c in cookies}
                     except Exception as e:
-                        logger.warning(f"[LoginConsole] {platform} 刷新页面获取cookie失败: {e}")
+                        logger.warning(f"[LoginConsole] {platform} 导航到首页获取cookie失败: {e}")
 
             # 保存 cookie
             if _cookie_manager:
@@ -516,9 +540,14 @@ async def poll_login(platform: str, token: str = Query("")):
             logger.info(f"[LoginConsole] {platform} 登录成功，已保存 {len(cookie_dict)} 个 cookie")
             return JSONResponse({"status": "success"})
 
-        # 调试日志：每次轮询记录当前 cookie 数量
+        # 调试日志：每次轮询记录当前 cookie 数量和关键 cookie
         elapsed = int(time.time() - session["started_at"])
-        logger.debug(f"[LoginConsole] {platform} 轮询中 ({elapsed}s)，当前 {len(cookie_dict)} 个 cookie")
+        key_cookies = {k: v[:20] for k, v in cookie_dict.items() if k in (
+            "LOGIN_STATUS", "HasUserLogin", "sessionid", "passport_csrf_token",
+            "passToken", "STOKEN", "PTOKEN", "BDUSS", "SSOLoginState", "WBPSESS",
+            "SESSDATA", "web_session", "z_c0",
+        )}
+        logger.debug(f"[LoginConsole] {platform} 轮询中 ({elapsed}s)，{len(cookie_dict)} cookie，关键: {key_cookies}")
 
         # 检查超时（5 分钟）
         if elapsed > 300:
