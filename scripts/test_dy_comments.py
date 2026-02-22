@@ -165,7 +165,17 @@ async def main():
             search_res = await dy_client.search_info_by_keyword(keyword=KEYWORD, offset=0)
             status_code = search_res.get("status_code", "?")
             data_list = search_res.get("data", [])
-            print(f"   status_code={status_code}, 返回 {len(data_list)} 个结果")
+            print(f"   status_code={status_code}, 返回 {len(data_list) if data_list else 0} 个结果")
+            print(f"   响应 keys: {list(search_res.keys())}")
+
+            if not data_list:
+                import json
+                # dump 完整响应帮助诊断
+                resp_str = json.dumps(search_res, ensure_ascii=False, indent=2)
+                print(f"   响应内容 (前1500字符):")
+                print(f"   {resp_str[:1500]}")
+                if len(resp_str) > 1500:
+                    print(f"   ... (共 {len(resp_str)} 字符)")
 
             if status_code != 0:
                 print(f"   ❌ 搜索失败: status_msg={search_res.get('status_msg')}")
