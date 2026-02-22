@@ -219,8 +219,10 @@ class BaiduTieBaClient(AbstractApiClient):
         note_type: SearchNoteType = SearchNoteType.FIXED_THREAD,
     ) -> List[TiebaNote]:
         """
-        根据关键词搜索贴吧帖子 (通过Playwright fetch绕过Python TLS指纹拦截)
+        根据关键词搜索贴吧帖子 (通过curl子进程绕过Python TLS指纹拦截)
         """
+        import subprocess
+
         search_url = f"{self._host}/f/search/res"
         params = {
             "ie": "utf-8",
@@ -231,27 +233,32 @@ class BaiduTieBaClient(AbstractApiClient):
             "only_thread": note_type.value,
         }
         full_url = f"{search_url}?{urlencode(params)}"
-        utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] fetch 搜索: {keyword}, page={page}")
+        cookie_str = self.headers.get("Cookie", "")
+        ua = self.headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+        utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] curl 搜索: {keyword}, page={page}")
 
         try:
-            if not self.playwright_page:
-                raise Exception("playwright_page is None, cannot use browser fetch")
+            cmd = [
+                "curl", "-sS", "-L", "--max-time", "30", "--compressed",
+                "-H", f"User-Agent: {ua}",
+                "-H", f"Cookie: {cookie_str}",
+                "-H", "Referer: https://tieba.baidu.com/",
+                "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "-H", "Accept-Language: zh-CN,zh;q=0.9,en;q=0.8",
+                full_url,
+            ]
+            result = await asyncio.to_thread(
+                subprocess.run, cmd, capture_output=True, timeout=35
+            )
 
-            # 通过浏览器内部 fetch() 发请求，复用 Chromium 的 BoringSSL TLS 栈
-            page_content = await self.playwright_page.evaluate("""
-                async (url) => {
-                    const resp = await fetch(url, {
-                        credentials: 'include',
-                        headers: {
-                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-                        }
-                    });
-                    return await resp.text();
-                }
-            """, full_url)
+            # 贴吧页面是 GBK 编码
+            page_content = result.stdout.decode("gbk", errors="replace")
+            utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] curl 完成, returncode={result.returncode}, 长度={len(page_content)}")
 
-            utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] fetch 完成, 长度={len(page_content)}")
+            if result.returncode != 0:
+                stderr = result.stderr.decode("utf-8", errors="replace")
+                utils.logger.error(f"[BaiduTieBaClient.get_notes_by_keyword] curl 失败: {stderr}")
+                return []
 
             # 检测是否为安全验证页
             if "百度安全验证" in page_content[:500]:
