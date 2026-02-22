@@ -221,8 +221,6 @@ class BaiduTieBaClient(AbstractApiClient):
         """
         根据关键词搜索贴吧帖子 (通过curl子进程绕过Python TLS指纹拦截)
         """
-        import subprocess
-
         search_url = f"{self._host}/f/search/res"
         params = {
             "ie": "utf-8",
@@ -233,32 +231,11 @@ class BaiduTieBaClient(AbstractApiClient):
             "only_thread": note_type.value,
         }
         full_url = f"{search_url}?{urlencode(params)}"
-        cookie_str = config.COOKIES if hasattr(config, 'COOKIES') and config.COOKIES else self.headers.get("Cookie", "")
-        ua = self.headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] curl 搜索: {keyword}, page={page}")
 
         try:
-            cmd = [
-                "curl", "-sS", "-L", "--max-time", "30", "--compressed",
-                "-H", f"User-Agent: {ua}",
-                "-H", f"Cookie: {cookie_str}",
-                "-H", "Referer: https://tieba.baidu.com/",
-                "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "-H", "Accept-Language: zh-CN,zh;q=0.9,en;q=0.8",
-                full_url,
-            ]
-            result = await asyncio.to_thread(
-                subprocess.run, cmd, capture_output=True, timeout=35
-            )
-
-            # 贴吧页面是 GBK 编码
-            page_content = result.stdout.decode("gbk", errors="replace")
-            utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] curl 完成, returncode={result.returncode}, 长度={len(page_content)}")
-
-            if result.returncode != 0:
-                stderr = result.stderr.decode("utf-8", errors="replace")
-                utils.logger.error(f"[BaiduTieBaClient.get_notes_by_keyword] curl 失败: {stderr}")
-                return []
+            page_content = await self._curl_get(full_url)
+            utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] curl 完成, 长度={len(page_content)}")
 
             # 检测是否为安全验证页
             if "百度安全验证" in page_content[:500]:
@@ -292,6 +269,7 @@ class BaiduTieBaClient(AbstractApiClient):
         ua = self.headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         cmd = [
             "curl", "-sS", "-L", "--max-time", "30", "--compressed",
+            "-D", "/dev/stderr",  # 响应头输出到 stderr
             "-H", f"User-Agent: {ua}",
             "-H", f"Cookie: {cookie_str}",
             "-H", "Referer: https://tieba.baidu.com/",
@@ -305,7 +283,29 @@ class BaiduTieBaClient(AbstractApiClient):
         if result.returncode != 0:
             stderr = result.stderr.decode("utf-8", errors="replace")
             raise Exception(f"curl failed (rc={result.returncode}): {stderr}")
-        return result.stdout.decode("gbk", errors="replace")
+
+        raw = result.stdout
+
+        # 从 HTTP 响应头检测 charset，响应头在 stderr
+        encoding = "gbk"  # 默认
+        try:
+            headers_text = result.stderr.decode("ascii", errors="replace").lower()
+            if "charset=utf-8" in headers_text:
+                encoding = "utf-8"
+            elif "charset=gbk" in headers_text or "charset=gb2312" in headers_text:
+                encoding = "gbk"
+        except Exception:
+            pass
+
+        # 如果响应头没有 charset，从 HTML meta 标签检测
+        if encoding == "gbk":
+            head_bytes = raw[:1024].lower()
+            if b'charset="utf-8"' in head_bytes or b"charset=utf-8" in head_bytes:
+                encoding = "utf-8"
+
+        text = raw.decode(encoding, errors="replace")
+        utils.logger.debug(f"[BaiduTieBaClient._curl_get] encoding={encoding}, len={len(text)}")
+        return text
 
     async def get_note_by_id(self, note_id: str) -> TiebaNote:
         """
