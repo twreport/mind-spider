@@ -21,7 +21,7 @@ KEYWORDS = ["中国短道速滑历史最差", "短道速滑"]
 
 # 所有平台
 # PLATFORMS = ["bili", "xhs", "dy", "ks", "wb", "tieba", "zhihu"]
-PLATFORMS = ["tieba"]  # 单平台测试
+PLATFORMS = ["ks"]  # 单平台测试
 
 ts = int(time.time())
 inserted = 0
