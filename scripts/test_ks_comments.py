@@ -1,16 +1,8 @@
 # -*- coding: utf-8 -*-
-"""快手评论获取诊断脚本
+"""快手评论 DOM 提取诊断脚本
 
-从 MongoDB 取 cookie，从 MySQL 取一个已爬取的视频 ID，
-用多种方式尝试获取评论，找出可行方案。
-
-方式:
-  1. httpx 直接 POST（原始方式）
-  2. httpx + 视频页 Referer
-  3. Playwright page.evaluate(fetch) 从首页
-  4. Playwright 导航到视频页后 page.evaluate(fetch)
-  5. Playwright 导航到视频页后，拦截浏览器自己发出的评论请求
-  6. Playwright context.request.post (带 Referer)
+GraphQL commentListQuery 已废弃（所有方式均返回 commentCount=None）。
+评论通过 SSR 渲染在页面 DOM 中。本脚本测试从 DOM 提取评论的方案。
 
 用法:
   cd /deploy/parallel-universe/mind-spider
@@ -21,9 +13,7 @@ import asyncio
 import json
 import os
 import sys
-import time
 
-import httpx
 import pymysql
 from pymongo import MongoClient
 
@@ -37,48 +27,6 @@ MYSQL_USER = "root"
 MYSQL_PASS = "Tangwei7311Yeti."
 MYSQL_DB = "fish"
 
-GRAPHQL_URL = "https://www.kuaishou.com/graphql"
-
-COMMENT_QUERY = """query commentListQuery($photoId: String, $pcursor: String) {
-  visionCommentList(photoId: $photoId, pcursor: $pcursor) {
-    commentCount
-    pcursor
-    rootComments {
-      commentId
-      authorId
-      authorName
-      content
-      headurl
-      timestamp
-      likedCount
-      realLikedCount
-      liked
-      status
-      authorLiked
-      subCommentCount
-      subCommentsPcursor
-      subComments {
-        commentId
-        authorId
-        authorName
-        content
-        headurl
-        timestamp
-        likedCount
-        realLikedCount
-        liked
-        status
-        authorLiked
-        replyToUserName
-        replyTo
-        __typename
-      }
-      __typename
-    }
-    __typename
-  }
-}"""
-
 STEALTH_JS = os.path.join(
     os.path.dirname(__file__),
     "..",
@@ -91,201 +39,193 @@ STEALTH_JS = os.path.join(
 
 # ─── 工具函数 ──────────────────────────────────────────
 def get_cookie_from_mongo():
-    """从 MongoDB 获取快手 cookie"""
     client = MongoClient(MONGO_URI)
     db = client[MONGO_DB]
     doc = db.platform_cookies.find_one({"platform": "ks", "status": "active"})
     client.close()
     if not doc:
-        print("❌ MongoDB 中没有找到 ks 的 active cookie")
+        print("MongoDB 中没有找到 ks 的 active cookie")
         sys.exit(1)
     cookies = doc["cookies"]
-    cookie_str = "; ".join(f"{k}={v}" for k, v in cookies.items())
-    print(f"✅ 获取到 ks cookie，共 {len(cookies)} 个字段，字符串长度 {len(cookie_str)}")
-    # 打印关键 cookie
-    for key in ["passToken", "kuaishou.web.cp.api_ph", "did", "didv", "userId", "kuaishou.server.web_st"]:
-        val = cookies.get(key, "")
-        print(f"   {key}: {'YES' if val else 'NO'} ({len(val)} chars)" if val else f"   {key}: NO")
-    return cookies, cookie_str
+    print(f"cookie: {len(cookies)} fields")
+    return cookies
 
 
-def get_video_id_from_mysql():
-    """从 MySQL 获取一个有内容的快手视频 ID"""
+def get_video_ids_from_mysql(limit=3):
     conn = pymysql.connect(
         host=MYSQL_HOST, port=MYSQL_PORT, user=MYSQL_USER,
         password=MYSQL_PASS, database=MYSQL_DB, charset="utf8mb4",
     )
     cursor = conn.cursor()
-    # 取最近的几个视频
     cursor.execute(
         "SELECT video_id, title, liked_count FROM kuaishou_video "
-        "ORDER BY add_ts DESC LIMIT 5"
+        "ORDER BY add_ts DESC LIMIT %s", (limit,)
     )
     rows = cursor.fetchall()
     conn.close()
     if not rows:
-        print("❌ MySQL 中没有找到快手视频")
+        print("MySQL 中没有找到快手视频")
         sys.exit(1)
-    print(f"\n📹 最近的快手视频:")
     for vid, title, likes in rows:
-        print(f"   {vid}  likes={likes}  {title[:40]}")
-    video_id = rows[0][0]
-    print(f"\n🎯 使用视频 ID: {video_id}")
-    return video_id
+        print(f"  {vid}  likes={likes}  {title[:50]}")
+    return [r[0] for r in rows]
 
 
-def build_comment_payload(photo_id, pcursor=""):
-    return {
-        "operationName": "commentListQuery",
-        "variables": {"photoId": photo_id, "pcursor": pcursor},
-        "query": COMMENT_QUERY,
+# ─── DOM 评论提取 JS ───────────────────────────────────
+# 这段 JS 在浏览器中执行，探测评论区的 DOM 结构并提取评论
+EXTRACT_COMMENTS_JS = """
+() => {
+    const results = { comments: [], debug: {} };
+
+    // ─── 策略1: 查找包含评论内容的容器 ───
+    // 快手视频页评论区的常见 class 名
+    const selectors = [
+        // 评论列表容器
+        '[class*="comment-list"]',
+        '[class*="commentList"]',
+        '[class*="CommentList"]',
+        '[class*="comment-item"]',
+        '[class*="commentItem"]',
+        '[class*="CommentItem"]',
+        // 评论内容
+        '[class*="comment-content"]',
+        '[class*="commentContent"]',
+        // 通用
+        '[data-testid*="comment"]',
+    ];
+
+    results.debug.selectorCounts = {};
+    for (const sel of selectors) {
+        const els = document.querySelectorAll(sel);
+        if (els.length > 0) {
+            results.debug.selectorCounts[sel] = els.length;
+        }
     }
 
+    // ─── 策略2: 遍历所有 class 含 comment 的元素，找结构 ───
+    const allCommentEls = document.querySelectorAll('[class*="comment"]');
+    results.debug.totalCommentElements = allCommentEls.length;
 
-def print_result(label, data):
-    """打印评论结果"""
-    if data is None:
-        print(f"   [{label}] ❌ 请求失败")
-        return
-    if data.get("errors"):
-        print(f"   [{label}] ❌ GraphQL errors: {data['errors']}")
-        return
-    vcl = data.get("data", {}).get("visionCommentList", {})
-    if not vcl:
-        print(f"   [{label}] ⚠️ 无 visionCommentList, keys={list(data.get('data', {}).keys())}")
-        return
-    comment_count = vcl.get("commentCount")
-    pcursor = vcl.get("pcursor")
-    root = vcl.get("rootComments", [])
-    print(f"   [{label}] commentCount={comment_count}, pcursor={pcursor}, rootComments={len(root) if root else 0}")
-    if root:
-        for c in root[:3]:
-            print(f"      💬 {c.get('authorName','?')}: {c.get('content','')[:50]}")
-        if len(root) > 3:
-            print(f"      ... 还有 {len(root)-3} 条")
+    // 收集所有 class 名（去重）
+    const classNames = new Set();
+    allCommentEls.forEach(el => {
+        el.classList.forEach(cls => {
+            if (cls.toLowerCase().includes('comment')) {
+                classNames.add(cls);
+            }
+        });
+    });
+    results.debug.commentClassNames = Array.from(classNames).sort();
 
+    // ─── 策略3: 找评论项的重复结构 ───
+    // 找 class 列表中出现次数 >= 2 的（说明是重复的评论项）
+    const classCounts = {};
+    allCommentEls.forEach(el => {
+        const key = el.className;
+        classCounts[key] = (classCounts[key] || 0) + 1;
+    });
 
-def build_headers(cookie_str, referer="https://www.kuaishou.com"):
-    return {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Cookie": cookie_str,
-        "Origin": "https://www.kuaishou.com",
-        "Referer": referer,
-        "Content-Type": "application/json;charset=UTF-8",
-        "Accept": "*/*",
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    // 找出重复出现的 class 组合（可能是评论项容器）
+    const repeatedClasses = Object.entries(classCounts)
+        .filter(([k, v]) => v >= 2)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
+    results.debug.repeatedCommentClasses = repeatedClasses.map(([cls, count]) => ({
+        className: cls.slice(0, 100),
+        count: count,
+    }));
+
+    // ─── 策略4: 找最可能的评论项容器，提取内容 ───
+    for (const [cls, count] of repeatedClasses) {
+        if (count < 2) continue;
+        const items = document.querySelectorAll('.' + cls.split(' ').join('.'));
+        if (items.length < 2) continue;
+
+        // 检查是否包含文本内容（评论通常有文字）
+        const sample = items[0];
+        const text = sample.textContent?.trim();
+        if (!text || text.length < 5) continue;
+
+        // 找到了可能的评论项容器
+        results.debug.selectedContainer = {
+            className: cls.slice(0, 100),
+            count: items.length,
+            sampleHTML: sample.innerHTML.slice(0, 500),
+            sampleText: text.slice(0, 200),
+        };
+
+        // 提取每个评论项的内容
+        items.forEach((item, idx) => {
+            if (idx >= 30) return; // 最多30条
+
+            // 尝试提取结构化数据
+            const comment = {
+                index: idx,
+                fullText: item.textContent?.trim().slice(0, 300) || '',
+                innerHTML: item.innerHTML.slice(0, 800),
+                childCount: item.children.length,
+            };
+
+            // 尝试找作者名（通常是第一个链接或特定 class）
+            const authorEl = item.querySelector('[class*="name"], [class*="author"], [class*="nick"], a[href*="profile"]');
+            if (authorEl) {
+                comment.author = authorEl.textContent?.trim();
+                comment.authorHref = authorEl.getAttribute('href') || '';
+            }
+
+            // 尝试找评论内容
+            const contentEl = item.querySelector('[class*="content"], [class*="text"]');
+            if (contentEl) {
+                comment.content = contentEl.textContent?.trim();
+            }
+
+            // 尝试找时间
+            const timeEl = item.querySelector('[class*="time"], [class*="date"], [class*="ago"]');
+            if (timeEl) {
+                comment.time = timeEl.textContent?.trim();
+            }
+
+            // 尝试找点赞数
+            const likeEl = item.querySelector('[class*="like"], [class*="count"]');
+            if (likeEl) {
+                comment.likes = likeEl.textContent?.trim();
+            }
+
+            results.comments.push(comment);
+        });
+
+        break; // 找到第一个合适的容器就停止
     }
 
+    // ─── 策略5: 如果上面没找到，直接 dump 页面 body 的结构 ───
+    if (results.comments.length === 0) {
+        // 找所有 div/section 层级，看看有没有评论相关的
+        const body = document.body;
+        const sections = body.querySelectorAll('div, section');
+        const commentSections = [];
+        sections.forEach(s => {
+            const text = s.textContent?.trim() || '';
+            const cls = s.className || '';
+            // 找包含时间格式（X小时前、X分钟前）的 section
+            if (/\\d+[小时分钟天]前/.test(text) && text.length < 500 && text.length > 10) {
+                commentSections.push({
+                    tag: s.tagName,
+                    className: cls.slice(0, 80),
+                    text: text.slice(0, 200),
+                    childCount: s.children.length,
+                });
+            }
+        });
+        results.debug.timeBasedSections = commentSections.slice(0, 20);
+    }
 
-# ─── 测试方式 ──────────────────────────────────────────
-async def test_httpx_basic(video_id, cookie_str):
-    """方式1: httpx 直接 POST（和原始代码一致）"""
-    print("\n━━━ 方式1: httpx 直接 POST (Referer=首页) ━━━")
-    payload = build_comment_payload(video_id)
-    headers = build_headers(cookie_str)
-    body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(GRAPHQL_URL, content=body, headers=headers, timeout=15)
-        print(f"   HTTP {resp.status_code}, 长度 {len(resp.text)}")
-        data = resp.json()
-        print_result("httpx基础", data)
-        return data
-    except Exception as e:
-        print(f"   ❌ 异常: {type(e).__name__}: {e}")
-        return None
-
-
-async def test_httpx_video_referer(video_id, cookie_str):
-    """方式2: httpx + 视频页 Referer"""
-    print("\n━━━ 方式2: httpx + 视频页 Referer ━━━")
-    payload = build_comment_payload(video_id)
-    referer = f"https://www.kuaishou.com/short-video/{video_id}"
-    headers = build_headers(cookie_str, referer=referer)
-    body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(GRAPHQL_URL, content=body, headers=headers, timeout=15)
-        print(f"   HTTP {resp.status_code}, 长度 {len(resp.text)}")
-        data = resp.json()
-        print_result("httpx+视频Referer", data)
-        return data
-    except Exception as e:
-        print(f"   ❌ 异常: {type(e).__name__}: {e}")
-        return None
+    return results;
+}
+"""
 
 
-async def test_httpx_no_cookie(video_id):
-    """方式2b: httpx 无 cookie（对照组）"""
-    print("\n━━━ 方式2b: httpx 无 cookie（对照组） ━━━")
-    payload = build_comment_payload(video_id)
-    headers = build_headers("", referer=f"https://www.kuaishou.com/short-video/{video_id}")
-    del headers["Cookie"]
-    body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(GRAPHQL_URL, content=body, headers=headers, timeout=15)
-        print(f"   HTTP {resp.status_code}, 长度 {len(resp.text)}")
-        data = resp.json()
-        print_result("httpx无cookie", data)
-        return data
-    except Exception as e:
-        print(f"   ❌ 异常: {type(e).__name__}: {e}")
-        return None
-
-
-async def test_playwright_homepage(video_id, cookie_dict):
-    """方式3: Playwright 从首页 page.evaluate(fetch)"""
-    print("\n━━━ 方式3: Playwright 首页 page.evaluate(fetch) ━━━")
-    from playwright.async_api import async_playwright
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        )
-        # 注入 stealth
-        if os.path.exists(STEALTH_JS):
-            await context.add_init_script(path=STEALTH_JS)
-
-        # 注入 cookie
-        for k, v in cookie_dict.items():
-            if not k or not v:
-                continue
-            await context.add_cookies([{"name": k, "value": str(v), "domain": ".kuaishou.com", "path": "/"}])
-
-        page = await context.new_page()
-        await page.goto("https://www.kuaishou.com/?isHome=1", wait_until="domcontentloaded", timeout=20000)
-        await asyncio.sleep(3)
-        print(f"   页面 URL: {page.url}")
-        print(f"   页面 title: {await page.title()}")
-
-        payload = build_comment_payload(video_id)
-        try:
-            data = await page.evaluate("""
-                async (params) => {
-                    const response = await fetch(params.url, {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json;charset=UTF-8'},
-                        body: JSON.stringify(params.data),
-                        credentials: 'include',
-                    });
-                    return await response.json();
-                }
-            """, {"url": GRAPHQL_URL, "data": payload})
-            print_result("Playwright首页fetch", data)
-        except Exception as e:
-            print(f"   ❌ 异常: {type(e).__name__}: {e}")
-            data = None
-
-        await browser.close()
-        return data
-
-
-async def test_playwright_video_page(video_id, cookie_dict):
-    """方式4: Playwright 导航到视频页后 page.evaluate(fetch)"""
-    print("\n━━━ 方式4: Playwright 视频页 page.evaluate(fetch) ━━━")
+async def test_dom_extraction(video_id, cookie_dict):
+    """从视频页 DOM 提取评论"""
     from playwright.async_api import async_playwright
 
     video_url = f"https://www.kuaishou.com/short-video/{video_id}"
@@ -305,269 +245,153 @@ async def test_playwright_video_page(video_id, cookie_dict):
             await context.add_cookies([{"name": k, "value": str(v), "domain": ".kuaishou.com", "path": "/"}])
 
         page = await context.new_page()
-        print(f"   导航到: {video_url}")
+
+        print(f"\n1. 导航到: {video_url}")
         await page.goto(video_url, wait_until="domcontentloaded", timeout=20000)
         await asyncio.sleep(5)
-        print(f"   页面 URL: {page.url}")
-        print(f"   页面 title: {await page.title()}")
+        print(f"   URL: {page.url}")
+        print(f"   Title: {await page.title()}")
 
-        payload = build_comment_payload(video_id)
-        try:
-            data = await page.evaluate("""
-                async (params) => {
-                    const response = await fetch(params.url, {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json;charset=UTF-8'},
-                        body: JSON.stringify(params.data),
-                        credentials: 'include',
-                    });
-                    return await response.json();
-                }
-            """, {"url": GRAPHQL_URL, "data": payload})
-            print_result("Playwright视频页fetch", data)
-        except Exception as e:
-            print(f"   ❌ 异常: {type(e).__name__}: {e}")
-            data = None
+        # 滚动到评论区
+        print("\n2. 滚动页面...")
+        await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 3)")
+        await asyncio.sleep(2)
+        await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
+        await asyncio.sleep(2)
 
-        await browser.close()
-        return data
+        # 提取评论
+        print("\n3. 提取 DOM 评论结构...")
+        result = await page.evaluate(EXTRACT_COMMENTS_JS)
 
+        debug = result.get("debug", {})
+        comments = result.get("comments", [])
 
-async def test_playwright_intercept(video_id, cookie_dict):
-    """方式5: 导航到视频页，拦截浏览器自身发出的评论 GraphQL 请求"""
-    print("\n━━━ 方式5: Playwright 拦截浏览器自身的评论请求 ━━━")
-    from playwright.async_api import async_playwright
+        print(f"\n─── 调试信息 ───")
+        print(f"  总 comment 相关元素: {debug.get('totalCommentElements', 0)}")
 
-    video_url = f"https://www.kuaishou.com/short-video/{video_id}"
-    captured = {"data": None}
+        if debug.get("selectorCounts"):
+            print(f"  选择器匹配:")
+            for sel, cnt in debug["selectorCounts"].items():
+                print(f"    {sel}: {cnt}")
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        )
-        if os.path.exists(STEALTH_JS):
-            await context.add_init_script(path=STEALTH_JS)
+        if debug.get("commentClassNames"):
+            print(f"  comment 相关 class 名:")
+            for cls in debug["commentClassNames"][:15]:
+                print(f"    {cls}")
 
-        for k, v in cookie_dict.items():
-            if not k or not v:
-                continue
-            await context.add_cookies([{"name": k, "value": str(v), "domain": ".kuaishou.com", "path": "/"}])
+        if debug.get("repeatedCommentClasses"):
+            print(f"  重复出现的 class 组合 (可能是评论项):")
+            for item in debug["repeatedCommentClasses"]:
+                print(f"    [{item['count']}x] {item['className'][:80]}")
 
-        page = await context.new_page()
+        if debug.get("selectedContainer"):
+            sc = debug["selectedContainer"]
+            print(f"\n─── 选中的评论容器 ───")
+            print(f"  class: {sc['className'][:80]}")
+            print(f"  数量: {sc['count']}")
+            print(f"  样本文本: {sc['sampleText'][:150]}")
+            print(f"  样本HTML: {sc['sampleHTML'][:300]}")
 
-        # 拦截 GraphQL 请求
-        graphql_requests = []
+        if debug.get("timeBasedSections"):
+            print(f"\n─── 基于时间格式找到的区块 ───")
+            for s in debug["timeBasedSections"][:10]:
+                print(f"  [{s['tag']}.{s['className'][:40]}] children={s['childCount']}")
+                print(f"    {s['text'][:120]}")
 
-        async def handle_response(response):
-            if "/graphql" in response.url:
-                try:
-                    body = await response.json()
-                    op = "unknown"
-                    # 从请求体中获取 operationName
-                    req = response.request
-                    if req.post_data:
-                        try:
-                            req_body = json.loads(req.post_data)
-                            op = req_body.get("operationName", "unknown")
-                        except Exception:
-                            pass
-                    graphql_requests.append({"op": op, "data": body})
-                    if "commentList" in op.lower() or "comment" in op.lower():
-                        captured["data"] = body
-                        print(f"   🎯 捕获到评论请求: op={op}")
-                        print_result("浏览器自身请求", body)
-                except Exception as e:
-                    pass
+        print(f"\n─── 提取到的评论 ({len(comments)} 条) ───")
+        for c in comments[:10]:
+            author = c.get("author", "?")
+            content = c.get("content", c.get("fullText", "")[:60])
+            time_str = c.get("time", "")
+            likes = c.get("likes", "")
+            print(f"  [{c['index']}] {author} ({time_str}) likes={likes}")
+            print(f"       {content[:80]}")
+            if c.get("authorHref"):
+                print(f"       href={c['authorHref'][:60]}")
 
-        page.on("response", handle_response)
+        if len(comments) > 10:
+            print(f"  ... 还有 {len(comments) - 10} 条")
 
-        print(f"   导航到: {video_url}")
-        await page.goto(video_url, wait_until="domcontentloaded", timeout=20000)
-        # 等待页面加载评论
-        await asyncio.sleep(8)
+        # ─── 额外: dump 第一个评论项的完整 innerHTML ───
+        if comments:
+            print(f"\n─── 第一个评论项的完整 innerHTML ───")
+            print(comments[0].get("innerHTML", "")[:1000])
 
-        print(f"   页面 URL: {page.url}")
-        print(f"   页面 title: {await page.title()}")
-        print(f"   捕获到 {len(graphql_requests)} 个 GraphQL 请求:")
-        for req in graphql_requests:
-            vcl = req["data"].get("data", {}).get("visionCommentList")
-            extra = ""
-            if vcl:
-                extra = f" commentCount={vcl.get('commentCount')}, rootComments={len(vcl.get('rootComments') or [])}"
-            print(f"      op={req['op']}{extra}")
-
-        # 尝试滚动到评论区
-        if not captured["data"] or not captured["data"].get("data", {}).get("visionCommentList", {}).get("rootComments"):
-            print("\n   📜 尝试滚动页面触发评论加载...")
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
-            await asyncio.sleep(3)
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            await asyncio.sleep(5)
-            print(f"   滚动后共捕获 {len(graphql_requests)} 个 GraphQL 请求:")
-            for req in graphql_requests:
-                vcl = req["data"].get("data", {}).get("visionCommentList")
-                extra = ""
-                if vcl:
-                    extra = f" commentCount={vcl.get('commentCount')}, rootComments={len(vcl.get('rootComments') or [])}"
-                print(f"      op={req['op']}{extra}")
-
-        # 如果还是没有捕获到评论，检查 DOM 中是否有评论
-        comment_dom = await page.evaluate("""
+        # ─── 额外: 尝试从 SSR 数据中提取 ───
+        print(f"\n─── 检查 SSR __NEXT_DATA__ / window.__data ───")
+        ssr_data = await page.evaluate("""
             () => {
-                const comments = document.querySelectorAll('[class*="comment"]');
-                return {
-                    count: comments.length,
-                    texts: Array.from(comments).slice(0, 3).map(c => c.textContent?.slice(0, 80) || ''),
-                };
+                // Next.js SSR
+                const nextData = document.getElementById('__NEXT_DATA__');
+                if (nextData) {
+                    try {
+                        const d = JSON.parse(nextData.textContent);
+                        // 查找 comment 相关的 key
+                        const find = (obj, path = '') => {
+                            if (!obj || typeof obj !== 'object') return [];
+                            let results = [];
+                            for (const [k, v] of Object.entries(obj)) {
+                                const p = path + '.' + k;
+                                if (k.toLowerCase().includes('comment')) {
+                                    results.push({ path: p, type: typeof v, isArray: Array.isArray(v), length: Array.isArray(v) ? v.length : null });
+                                }
+                                if (typeof v === 'object' && v !== null && path.split('.').length < 6) {
+                                    results = results.concat(find(v, p));
+                                }
+                            }
+                            return results;
+                        };
+                        return { found: true, commentPaths: find(d).slice(0, 20) };
+                    } catch(e) {
+                        return { found: true, parseError: e.message };
+                    }
+                }
+
+                // 检查其他全局变量
+                const globals = {};
+                for (const key of ['__data', '__INITIAL_STATE__', '__PRELOADED_STATE__', '__APP_DATA__']) {
+                    if (window[key]) {
+                        globals[key] = typeof window[key];
+                    }
+                }
+
+                // 检查 Apollo cache (GraphQL)
+                if (window.__APOLLO_STATE__) {
+                    const keys = Object.keys(window.__APOLLO_STATE__);
+                    const commentKeys = keys.filter(k => k.toLowerCase().includes('comment'));
+                    globals['__APOLLO_STATE__'] = { totalKeys: keys.length, commentKeys: commentKeys.slice(0, 10) };
+                }
+
+                return { found: false, globals };
             }
         """)
-        print(f"\n   DOM 中 class 含 'comment' 的元素: {comment_dom['count']} 个")
-        for t in comment_dom["texts"]:
-            if t.strip():
-                print(f"      {t.strip()[:60]}")
+        print(f"  SSR 数据: {json.dumps(ssr_data, ensure_ascii=False, indent=2)}")
 
         await browser.close()
-        return captured["data"]
+        return comments
 
 
-async def test_playwright_context_request(video_id, cookie_dict):
-    """方式6: Playwright context.request.post (API 请求，带自定义 Referer)"""
-    print("\n━━━ 方式6: Playwright context.request.post ━━━")
-    from playwright.async_api import async_playwright
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        )
-
-        for k, v in cookie_dict.items():
-            if not k or not v:
-                continue
-            await context.add_cookies([{"name": k, "value": str(v), "domain": ".kuaishou.com", "path": "/"}])
-
-        payload = build_comment_payload(video_id)
-        referer = f"https://www.kuaishou.com/short-video/{video_id}"
-
-        try:
-            resp = await context.request.post(
-                GRAPHQL_URL,
-                headers={
-                    "Content-Type": "application/json;charset=UTF-8",
-                    "Origin": "https://www.kuaishou.com",
-                    "Referer": referer,
-                },
-                data=payload,
-            )
-            print(f"   HTTP {resp.status}, 长度 {len(await resp.text())}")
-            data = await resp.json()
-            print_result("context.request", data)
-        except Exception as e:
-            print(f"   ❌ 异常: {type(e).__name__}: {e}")
-            data = None
-
-        await browser.close()
-        return data
-
-
-async def test_curl(video_id, cookie_str):
-    """方式7: curl 子进程（参考 tieba 成功案例）"""
-    print("\n━━━ 方式7: curl 子进程 ━━━")
-    import subprocess
-
-    payload = build_comment_payload(video_id)
-    body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
-    referer = f"https://www.kuaishou.com/short-video/{video_id}"
-
-    cmd = [
-        "curl", "-sS",
-        "--max-time", "15",
-        "-X", "POST",
-        "-H", "Content-Type: application/json;charset=UTF-8",
-        "-H", f"Cookie: {cookie_str}",
-        "-H", f"Referer: {referer}",
-        "-H", "Origin: https://www.kuaishou.com",
-        "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "-d", body,
-        GRAPHQL_URL,
-    ]
-    try:
-        result = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, text=True, timeout=20)
-        if result.returncode != 0:
-            print(f"   ❌ curl 失败 (rc={result.returncode}): {result.stderr}")
-            return None
-        print(f"   响应长度: {len(result.stdout)}")
-        data = json.loads(result.stdout)
-        print_result("curl", data)
-        return data
-    except Exception as e:
-        print(f"   ❌ 异常: {type(e).__name__}: {e}")
-        return None
-
-
-# ─── 主函数 ────────────────────────────────────────────
 async def main():
     print("=" * 60)
-    print("快手评论获取诊断脚本")
+    print("快手评论 DOM 提取诊断")
     print("=" * 60)
 
-    cookie_dict, cookie_str = get_cookie_from_mongo()
-    video_id = get_video_id_from_mysql()
+    cookie_dict = get_cookie_from_mongo()
+    video_ids = get_video_ids_from_mysql(limit=3)
 
-    print("\n" + "=" * 60)
-    print("开始测试各种方式")
-    print("=" * 60)
+    # 只测第一个视频
+    video_id = video_ids[0]
 
-    results = {}
+    print(f"\n测试视频: {video_id}")
+    comments = await test_dom_extraction(video_id, cookie_dict)
 
-    # 1. httpx 基础
-    results["httpx基础"] = await test_httpx_basic(video_id, cookie_str)
-
-    # 2. httpx + 视频 Referer
-    results["httpx+Referer"] = await test_httpx_video_referer(video_id, cookie_str)
-
-    # 2b. httpx 无 cookie
-    results["httpx无cookie"] = await test_httpx_no_cookie(video_id)
-
-    # 7. curl (不需要 Playwright，先测)
-    results["curl"] = await test_curl(video_id, cookie_str)
-
-    # 3. Playwright 首页 fetch
-    results["PW首页"] = await test_playwright_homepage(video_id, cookie_dict)
-
-    # 4. Playwright 视频页 fetch
-    results["PW视频页"] = await test_playwright_video_page(video_id, cookie_dict)
-
-    # 5. Playwright 拦截浏览器自身请求
-    results["PW拦截"] = await test_playwright_intercept(video_id, cookie_dict)
-
-    # 6. Playwright context.request
-    results["PW_context"] = await test_playwright_context_request(video_id, cookie_dict)
-
-    # ─── 汇总 ──────────────────────────────────────────
-    print("\n" + "=" * 60)
-    print("汇总结果")
-    print("=" * 60)
-    for name, data in results.items():
-        if data is None:
-            status = "❌ 失败"
-        elif data.get("errors"):
-            status = "❌ GraphQL错误"
-        else:
-            vcl = data.get("data", {}).get("visionCommentList", {})
-            count = vcl.get("commentCount")
-            root = vcl.get("rootComments", [])
-            n = len(root) if root else 0
-            if n > 0:
-                status = f"✅ 成功! {n} 条评论 (commentCount={count})"
-            elif count and count > 0:
-                status = f"⚠️ commentCount={count} 但 rootComments=0"
-            else:
-                status = f"⛔ commentCount={count}, rootComments=0"
-        print(f"  {name:20s} → {status}")
+    print(f"\n{'='*60}")
+    print(f"结论: 提取到 {len(comments)} 条评论")
+    if comments:
+        print("DOM 提取方案可行!")
+    else:
+        print("DOM 提取也失败，需要进一步排查")
+    print(f"{'='*60}")
 
 
 if __name__ == "__main__":
