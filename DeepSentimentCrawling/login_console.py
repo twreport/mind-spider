@@ -218,7 +218,7 @@ async def login_page(platform: str, token: str = Query("")):
 
         <button onclick="startLogin()">获取二维码</button>
         <button id="btn-confirm" onclick="confirmLogin()" style="display:none; background:#52c41a; margin-left:10px;">我已扫码并确认</button>
-        <p class="tip">若扫码登录不成功（如抖音），请使用下方的 Cookie 粘贴方式</p>
+        <p class="tip">若扫码登录不成功（如抖音、快手），请使用下方的 Cookie 粘贴方式或 Chrome 插件一键导出</p>
 
         <!-- 方式二：Cookie 粘贴 -->
         <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
@@ -421,8 +421,19 @@ async def get_qr(platform: str, token: str = Query("")):
                 if not dismissed:
                     break
 
-        # 快手特殊处理：首页点击"登录"按钮弹出登录框
+        # 快手特殊处理：首页点击"登录"按钮弹出登录框，处理滑块验证
         elif platform == "ks":
+            # 注入额外反检测脚本
+            try:
+                await page.evaluate("""() => {
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                    window.navigator.chrome = { runtime: {} };
+                    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                    Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en'] });
+                }""")
+            except Exception:
+                pass
+
             try:
                 login_btn = page.locator("xpath=//p[text()='登录']")
                 await login_btn.click()
@@ -430,6 +441,58 @@ async def get_qr(platform: str, token: str = Query("")):
                 logger.info("[LoginConsole] ks 已点击登录按钮")
             except Exception as e:
                 logger.warning(f"[LoginConsole] ks 点击登录按钮失败: {e}")
+
+            # 尝试关闭滑块验证弹窗
+            for _attempt in range(3):
+                dismissed = False
+                for captcha_sel in [
+                    # yoda 组件库的关闭按钮
+                    "xpath=//div[contains(@class,'yoda-dialog')]//span[contains(@class,'close')]",
+                    "xpath=//div[contains(@class,'yoda-dialog')]//i[contains(@class,'close')]",
+                    "xpath=//div[contains(@class,'yoda-dialog')]//div[contains(@class,'close')]",
+                    # 通用验证/滑块弹窗关闭
+                    "xpath=//div[contains(@class,'captcha')]//div[contains(@class,'close') or contains(@class,'Close')]",
+                    "xpath=//div[contains(@class,'slider')]//div[contains(@class,'close') or contains(@class,'Close')]",
+                    "xpath=//div[contains(@class,'verify')]//div[contains(@class,'close') or contains(@class,'Close')]",
+                    "xpath=//div[contains(@class,'verify')]//span[contains(@class,'close')]",
+                    "xpath=//div[contains(@class,'modal')]//span[contains(@class,'close') or contains(@class,'Close')]",
+                    "xpath=//div[contains(@class,'dialog')]//span[contains(@class,'close') or contains(@class,'Close')]",
+                    # 通用 X 按钮
+                    "xpath=//div[contains(@class,'mask')]//span[contains(@class,'close')]",
+                    "xpath=//div[contains(@class,'overlay')]//span[contains(@class,'close')]",
+                ]:
+                    try:
+                        el = await page.wait_for_selector(captcha_sel, timeout=1500)
+                        if el:
+                            await el.click()
+                            await page.wait_for_timeout(1000)
+                            dismissed = True
+                            logger.info(f"[LoginConsole] ks 关闭验证弹窗成功: {captcha_sel}")
+                            break
+                    except Exception:
+                        continue
+                if not dismissed:
+                    break
+
+            # 如果滑块仍在，刷新页面重试一次
+            qr_visible = False
+            try:
+                qr_el = await page.wait_for_selector(plat_conf["qr_selector"], timeout=3000)
+                if qr_el:
+                    qr_visible = True
+            except Exception:
+                pass
+
+            if not qr_visible:
+                logger.info("[LoginConsole] ks 二维码未出现，刷新页面重试")
+                await page.reload(wait_until="domcontentloaded")
+                await page.wait_for_timeout(3000)
+                try:
+                    login_btn = page.locator("xpath=//p[text()='登录']")
+                    await login_btn.click()
+                    await page.wait_for_timeout(2000)
+                except Exception:
+                    pass
 
         # 贴吧特殊处理：先访问 baidu.com，再跳转到贴吧（避免直接访问触发滑块验证）
         elif platform == "tieba":
