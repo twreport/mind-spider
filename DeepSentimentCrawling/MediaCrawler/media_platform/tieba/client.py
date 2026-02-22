@@ -233,7 +233,7 @@ class BaiduTieBaClient(AbstractApiClient):
             "only_thread": note_type.value,
         }
         full_url = f"{search_url}?{urlencode(params)}"
-        cookie_str = self.headers.get("Cookie", "")
+        cookie_str = config.COOKIES if hasattr(config, 'COOKIES') and config.COOKIES else self.headers.get("Cookie", "")
         ua = self.headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] curl 搜索: {keyword}, page={page}")
 
