@@ -321,18 +321,29 @@ async def get_qr(platform: str, token: str = Query("")):
                 except Exception:
                     pass
 
-            # 尝试关闭可能出现的验证弹窗
-            try:
-                close_btn = await page.wait_for_selector(
-                    "xpath=//div[contains(@class,'captcha')]//span[contains(@class,'close')] | "
-                    "xpath=//div[contains(@id,'captcha')]//a[contains(@class,'close')]",
-                    timeout=3000,
-                )
-                if close_btn:
-                    await close_btn.click()
-                    await page.wait_for_timeout(1000)
-            except Exception:
-                pass
+            # 尝试关闭可能出现的验证弹窗（多种选择器覆盖不同样式）
+            for _attempt in range(3):
+                dismissed = False
+                for captcha_sel in [
+                    "xpath=//div[contains(@id,'captcha')]//div[contains(@class,'close') or contains(@class,'Close')]",
+                    "xpath=//div[contains(@class,'captcha')]//div[contains(@class,'close') or contains(@class,'Close')]",
+                    "xpath=//div[contains(@class,'verify')]//div[contains(@class,'close') or contains(@class,'Close')]",
+                    "xpath=//div[contains(@id,'verify')]//span[contains(@class,'close')]",
+                    "xpath=//*[contains(@class,'captcha_close') or contains(@class,'sc-jTzLTM')]",
+                    "xpath=//div[contains(@class,'modal')]//span[contains(@class,'close') or contains(@class,'Close')]",
+                ]:
+                    try:
+                        el = await page.wait_for_selector(captcha_sel, timeout=1500)
+                        if el:
+                            await el.click()
+                            await page.wait_for_timeout(1000)
+                            dismissed = True
+                            logger.info(f"[LoginConsole] dy 关闭验证弹窗成功: {captcha_sel}")
+                            break
+                    except Exception:
+                        continue
+                if not dismissed:
+                    break
 
         # 快手特殊处理：首页点击"登录"按钮弹出登录框
         elif platform == "ks":
@@ -463,43 +474,46 @@ async def poll_login(platform: str, token: str = Query("")):
 
         logged_in = False
 
-        # 抖音特殊处理：检查所有页面的 localStorage + 主动刷新
+        # 抖音特殊处理：主动导航到首页检查登录状态
+        # headless 模式下页面内 JS 轮询可能不工作，改为主动导航检测
         if platform == "dy":
-            for p in context.pages:
-                try:
-                    local_storage = await p.evaluate("() => window.localStorage")
-                    has_user_login = local_storage.get("HasUserLogin", "")
-                    if has_user_login == "1":
-                        logger.info(f"[LoginConsole] {platform} localStorage HasUserLogin=1，检测到登录")
-                        logged_in = True
-                        break
-                except Exception:
-                    continue
-
-            # 等待超过 15 秒后，主动刷新页面触发 cookie 同步
             elapsed_so_far = int(time.time() - session["started_at"])
-            if not logged_in and elapsed_so_far > 15 and not session.get("_dy_refreshed"):
+            # 每 8 秒主动导航一次检查（前 8 秒让页面自身 JS 先尝试）
+            check_count = session.get("_dy_check_count", 0)
+            if elapsed_so_far > 8 and (elapsed_so_far // 8) > check_count:
+                session["_dy_check_count"] = elapsed_so_far // 8
                 page = session.get("page")
                 if page:
                     try:
-                        logger.info(f"[LoginConsole] {platform} 主动刷新页面检测登录状态")
-                        await page.reload(wait_until="domcontentloaded", timeout=15000)
-                        await page.wait_for_timeout(3000)
-                        session["_dy_refreshed"] = True
-                        # 刷新后重新获取 cookies
+                        logger.info(f"[LoginConsole] {platform} 主动导航到首页检测登录状态 (第{session['_dy_check_count']}次)")
+                        await page.goto("https://www.douyin.com", wait_until="domcontentloaded", timeout=15000)
+                        await page.wait_for_timeout(2000)
+                        # 重新获取 cookies
                         cookies = await context.cookies()
                         cookie_dict = {c["name"]: c["value"] for c in cookies}
-                        # 再检查一次 localStorage
+                        # 检查 localStorage
                         for p in context.pages:
                             try:
                                 local_storage = await p.evaluate("() => window.localStorage")
                                 if local_storage.get("HasUserLogin", "") == "1":
+                                    logger.info(f"[LoginConsole] {platform} 导航后检测到 HasUserLogin=1")
                                     logged_in = True
                                     break
                             except Exception:
                                 continue
                     except Exception as e:
-                        logger.debug(f"[LoginConsole] {platform} 主动刷新失败: {e}")
+                        logger.debug(f"[LoginConsole] {platform} 主动导航失败: {e}")
+
+            # 也检查当前页面 localStorage（前 8 秒内）
+            if not logged_in:
+                for p in context.pages:
+                    try:
+                        local_storage = await p.evaluate("() => window.localStorage")
+                        if local_storage.get("HasUserLogin", "") == "1":
+                            logged_in = True
+                            break
+                    except Exception:
+                        continue
 
         # 通用检查：session cookie 是否出现
         if not logged_in and session_key in cookie_dict:
