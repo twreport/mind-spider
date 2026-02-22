@@ -173,6 +173,7 @@ Capabilities communicate through shared data (MongoDB collections, MySQL tables)
 - Most platforms require login (QR code, phone, or cookie-based)
 - Crawlers include delays to avoid platform rate limiting
 - Commercial use requires written permission from original MediaCrawler author
+- **爬取 7 个平台的诀窍都在 `PLATFORM_DEBUG_NOTES.md` 里面，请认真阅读，在调试或测试各大平台爬虫时必读。**
 
 ## 项目优缺点分析
 
