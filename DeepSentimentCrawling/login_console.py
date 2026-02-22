@@ -206,7 +206,8 @@ async def login_page(platform: str, token: str = Query("")):
         <div id="status"></div>
 
         <button onclick="startLogin()">获取二维码</button>
-        <p class="tip">二维码获取后，页面将自动检测登录状态</p>
+        <button id="btn-confirm" onclick="confirmLogin()" style="display:none; background:#52c41a; margin-left:10px;">我已扫码并确认</button>
+        <p class="tip">二维码获取后，页面将自动检测登录状态；若自动检测无反应，请在手机确认后点击绿色按钮</p>
 
         <script>
             const platform = "{platform}";
@@ -216,6 +217,7 @@ async def login_page(platform: str, token: str = Query("")):
             async function startLogin() {{
                 document.getElementById("qr-container").innerHTML = '<p class="loading">正在启动浏览器...</p>';
                 document.getElementById("status").innerHTML = '';
+                document.getElementById("btn-confirm").style.display = 'none';
 
                 try {{
                     const resp = await fetch(`/login/${{platform}}/qr?token=${{token}}`);
@@ -227,6 +229,7 @@ async def login_page(platform: str, token: str = Query("")):
                     if (data.qr_base64) {{
                         document.getElementById("qr-container").innerHTML =
                             `<img src="data:image/png;base64,${{data.qr_base64}}" alt="QR Code">`;
+                        document.getElementById("btn-confirm").style.display = 'inline-block';
                         startPolling();
                     }} else {{
                         document.getElementById("qr-container").innerHTML =
@@ -249,6 +252,7 @@ async def login_page(platform: str, token: str = Query("")):
 
                         if (data.status === "success") {{
                             clearInterval(pollTimer);
+                            document.getElementById("btn-confirm").style.display = 'none';
                             document.getElementById("status").innerHTML =
                                 '<p class="success">✓ 登录成功！Cookie 已保存。</p>';
                         }} else if (data.status === "error") {{
@@ -260,6 +264,26 @@ async def login_page(platform: str, token: str = Query("")):
                         // 网络错误，继续轮询
                     }}
                 }}, 2000);
+            }}
+
+            async function confirmLogin() {{
+                document.getElementById("status").innerHTML = '<p class="loading">正在检测登录状态...</p>';
+                try {{
+                    const resp = await fetch(`/login/${{platform}}/confirm?token=${{token}}`);
+                    const data = await resp.json();
+                    if (data.status === "success") {{
+                        if (pollTimer) clearInterval(pollTimer);
+                        document.getElementById("btn-confirm").style.display = 'none';
+                        document.getElementById("status").innerHTML =
+                            '<p class="success">✓ 登录成功！Cookie 已保存。</p>';
+                    }} else {{
+                        document.getElementById("status").innerHTML =
+                            `<p class="error">${{data.message || '未检测到登录，请确认手机上已点击确认'}}</p>`;
+                    }}
+                }} catch (e) {{
+                    document.getElementById("status").innerHTML =
+                        `<p class="error">检测失败: ${{e.message}}</p>`;
+                }}
             }}
 
             // 页面加载时自动获取二维码
@@ -454,6 +478,84 @@ async def get_qr(platform: str, token: str = Query("")):
     except Exception as e:
         logger.error(f"[LoginConsole] 获取 {platform} 二维码失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/login/{platform}/confirm")
+async def confirm_login(platform: str, token: str = Query("")):
+    """用户手动确认已扫码，系统导航到平台首页检查登录状态"""
+    _check_token(token)
+
+    session = _active_sessions.get(platform)
+    if not session:
+        return JSONResponse({"status": "error", "message": "无活跃登录会话"})
+
+    context: BrowserContext = session["context"]
+    page = session.get("page")
+
+    plat_conf = _PLATFORM_LOGIN.get(platform, {})
+    # 导航到平台首页，触发服务器写入登录 cookie
+    check_url = {
+        "dy": "https://www.douyin.com",
+        "xhs": "https://www.xiaohongshu.com",
+        "ks": "https://www.kuaishou.com",
+        "bili": "https://www.bilibili.com",
+        "wb": "https://m.weibo.cn",
+        "tieba": "https://tieba.baidu.com",
+        "zhihu": "https://www.zhihu.com",
+    }.get(platform, plat_conf.get("url", ""))
+
+    try:
+        if page:
+            logger.info(f"[LoginConsole] {platform} 用户确认已扫码，导航到 {check_url}")
+            await page.goto(check_url, wait_until="domcontentloaded", timeout=20000)
+            await page.wait_for_timeout(5000)
+
+        # 获取 cookies
+        cookies = await context.cookies()
+        cookie_dict = {c["name"]: c["value"] for c in cookies}
+        logger.info(f"[LoginConsole] {platform} 确认后 cookie 数量: {len(cookie_dict)}，名称: {sorted(cookie_dict.keys())}")
+
+        # 检查登录状态
+        session_key = session["session_key"]
+        logged_in = False
+
+        if session_key in cookie_dict:
+            logged_in = True
+        # 抖音：也检查 LOGIN_STATUS=1 和 localStorage
+        if not logged_in and platform == "dy":
+            if cookie_dict.get("LOGIN_STATUS") == "1":
+                logged_in = True
+            else:
+                for p in context.pages:
+                    try:
+                        ls = await p.evaluate("() => window.localStorage")
+                        if ls.get("HasUserLogin", "") == "1":
+                            logged_in = True
+                            break
+                    except Exception:
+                        continue
+        # 贴吧：STOKEN / PTOKEN / BDUSS
+        if not logged_in and platform == "tieba":
+            if cookie_dict.get("PTOKEN") or cookie_dict.get("BDUSS"):
+                logged_in = True
+
+        if logged_in:
+            if _cookie_manager:
+                _cookie_manager.save_cookies(platform, cookie_dict)
+
+            if page:
+                await page.close()
+            await context.close()
+            del _active_sessions[platform]
+
+            logger.info(f"[LoginConsole] {platform} 确认登录成功，已保存 {len(cookie_dict)} 个 cookie")
+            return JSONResponse({"status": "success"})
+        else:
+            return JSONResponse({"status": "error", "message": f"未检测到登录 cookie ({session_key})，请确认手机上已完成登录"})
+
+    except Exception as e:
+        logger.error(f"[LoginConsole] {platform} 确认检测异常: {e}")
+        return JSONResponse({"status": "error", "message": str(e)})
 
 
 @app.get("/login/{platform}/poll")
