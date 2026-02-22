@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "MindSpider Cookie Exporter",
+  "version": "1.0.0",
+  "description": "一键导出社交平台 Cookie 到 MindSpider 服务器",
+  "permissions": [
+    "cookies",
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "*://*.douyin.com/*",
+    "*://*.xiaohongshu.com/*",
+    "*://*.bilibili.com/*",
+    "*://*.weibo.com/*",
+    "*://*.weibo.cn/*",
+    "*://*.kuaishou.com/*",
+    "*://*.baidu.com/*",
+    "*://*.zhihu.com/*",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "MindSpider Cookie Exporter"
+  }
+}

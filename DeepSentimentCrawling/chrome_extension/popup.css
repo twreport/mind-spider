@@ -1,0 +1,193 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  width: 340px;
+  font-family: -apple-system, "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+  color: #333;
+  padding: 16px;
+}
+
+h1 {
+  font-size: 15px;
+  text-align: center;
+  margin-bottom: 12px;
+  color: #1a1a1a;
+}
+
+/* 设置区 */
+fieldset {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+legend {
+  font-size: 12px;
+  color: #888;
+  padding: 0 4px;
+}
+
+label {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 6px;
+}
+
+input[type="text"],
+input[type="password"] {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  margin-top: 2px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: monospace;
+}
+
+input:focus {
+  outline: none;
+  border-color: #4096ff;
+  box-shadow: 0 0 0 2px rgba(64, 150, 255, 0.15);
+}
+
+#settings-box button {
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 0;
+  font-size: 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  background: #fafafa;
+  cursor: pointer;
+}
+
+#settings-box button:hover {
+  border-color: #4096ff;
+  color: #4096ff;
+}
+
+#settings-status {
+  font-size: 12px;
+  margin-top: 4px;
+  min-height: 16px;
+}
+
+/* 当前平台 */
+#current-platform {
+  text-align: center;
+  padding: 8px 0;
+  font-size: 13px;
+}
+
+/* 主按钮 */
+button.primary {
+  display: block;
+  width: 100%;
+  padding: 10px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  background: #1677ff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+button.primary:hover:not(:disabled) {
+  background: #4096ff;
+}
+
+button.primary:disabled {
+  background: #bfbfbf;
+  cursor: not-allowed;
+}
+
+/* 结果 */
+#result {
+  text-align: center;
+  padding: 6px 0;
+  font-size: 13px;
+  min-height: 28px;
+}
+
+.success {
+  color: #52c41a;
+}
+
+.error {
+  color: #ff4d4f;
+}
+
+.loading {
+  color: #888;
+}
+
+/* 分隔线 */
+.divider {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  color: #999;
+  margin: 10px 0 8px;
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #e0e0e0;
+}
+
+.divider::before { margin-right: 8px; }
+.divider::after  { margin-left: 8px; }
+
+/* 平台按钮网格 */
+#platform-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#platform-buttons button {
+  flex: 1 0 calc(25% - 6px);
+  min-width: 70px;
+  padding: 6px 4px;
+  font-size: 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  background: #fafafa;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+#platform-buttons button:hover {
+  border-color: #1677ff;
+  color: #1677ff;
+  background: #e6f4ff;
+}
+
+#platform-buttons button.exporting {
+  border-color: #faad14;
+  color: #faad14;
+  cursor: wait;
+}
+
+#platform-buttons button.done {
+  border-color: #52c41a;
+  color: #52c41a;
+}
+
+#platform-buttons button.fail {
+  border-color: #ff4d4f;
+  color: #ff4d4f;
+}

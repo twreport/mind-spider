@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=360">
+  <title>MindSpider Cookie Exporter</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <h1>MindSpider Cookie Exporter</h1>
+
+  <!-- 服务器设置 -->
+  <fieldset id="settings-box">
+    <legend>服务器设置</legend>
+    <label>
+      地址
+      <input type="text" id="server-url" placeholder="http://x.x.x.x:8777">
+    </label>
+    <label>
+      Token
+      <input type="password" id="token" placeholder="访问令牌">
+    </label>
+    <button id="btn-save-settings">保存设置</button>
+    <div id="settings-status"></div>
+  </fieldset>
+
+  <!-- 当前平台识别 -->
+  <div id="current-platform">
+    <span id="platform-label">检测中...</span>
+  </div>
+
+  <!-- 一键导出按钮 -->
+  <button id="btn-export" class="primary" disabled>一键导出 Cookie</button>
+
+  <!-- 状态提示 -->
+  <div id="result"></div>
+
+  <!-- 全部平台快捷导出 -->
+  <div id="all-platforms">
+    <div class="divider">全部平台快捷导出</div>
+    <div id="platform-buttons"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

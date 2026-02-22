@@ -13,6 +13,7 @@ import time
 from typing import Optional
 
 from fastapi import FastAPI, Query, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from loguru import logger
 from playwright.async_api import async_playwright, Browser, BrowserContext
@@ -28,6 +29,13 @@ from ms_config import settings
 from DeepSentimentCrawling.cookie_manager import CookieManager
 
 app = FastAPI(title="MindSpider Login Console", docs_url=None, redoc_url=None)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^chrome-extension://.*$",
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 
 # stealth 脚本路径
 _STEALTH_JS = os.path.join(
