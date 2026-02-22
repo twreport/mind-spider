@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
-"""抖音爬取诊断脚本 v4
+"""抖音爬取诊断脚本 v5
 
-上一轮发现:
-  - API (httpx + a_bogus): verify_check
-  - 浏览器 fetch: verify_check
-  - 直接导航到 /search/ URL: 验证码中间页
-  - 首页搜索框: 到达了真正的搜索页面! 但 DOM 提取为空
+已验证: 搜索框方式可以绕过 verify_check，浏览器自动发出的
+/search/single/ 请求返回了 data_len=10 的真实数据。
 
-本轮重点: 深入分析搜索框到达的搜索结果页，提取视频数据。
+本轮: 完整拦截 API 响应 → 提取 aweme_ids → 测试评论获取。
 
 用法:
   cd /deploy/parallel-universe/mind-spider/DeepSentimentCrawling/MediaCrawler
@@ -32,6 +29,7 @@ MONGO_URI = "mongodb://10.168.1.80:27018"
 MONGO_DB = "mindspider_signal"
 KEYWORD = "短道速滑"
 MAX_VIDEOS = 3
+MAX_COMMENTS = 10
 STEALTH_JS = os.path.join(MC_DIR, "libs", "stealth.min.js")
 
 
@@ -49,122 +47,9 @@ def get_cookie_from_mongo():
     return cookies, cookie_str
 
 
-# ─── 全面的页面探测 JS ───────────────────────────────
-DEEP_PAGE_ANALYSIS_JS = """
-() => {
-    const r = {};
-
-    // 1. 所有链接 (去重)
-    const allLinks = {};
-    document.querySelectorAll('a[href]').forEach(a => {
-        const href = a.getAttribute('href') || '';
-        if (href.length < 3 || href === '#' || href.startsWith('javascript:')) return;
-        // 归类链接
-        let category = 'other';
-        if (href.includes('/video/')) category = 'video';
-        else if (href.includes('/note/')) category = 'note';
-        else if (href.includes('/user/')) category = 'user';
-        else if (href.includes('/search')) category = 'search';
-        else if (href.includes('/live/')) category = 'live';
-        else if (href.includes('/discover')) category = 'discover';
-        if (!allLinks[category]) allLinks[category] = [];
-        if (allLinks[category].length < 5) {
-            allLinks[category].push(href.slice(0, 120));
-        } else if (allLinks[category].length === 5) {
-            allLinks[category].push('...(more)');
-        }
-    });
-    r.linkCategories = allLinks;
-    r.totalLinks = document.querySelectorAll('a[href]').length;
-
-    // 2. 页面中所有有 id 的 script 标签
-    const scripts = [];
-    document.querySelectorAll('script[id]').forEach(s => {
-        scripts.push({
-            id: s.id,
-            type: s.type || '',
-            contentLen: (s.textContent || '').length,
-        });
-    });
-    r.namedScripts = scripts;
-
-    // 3. RENDER_DATA 分析
-    const rd = document.getElementById('RENDER_DATA');
-    if (rd) {
-        r.renderDataLen = (rd.textContent || '').length;
-        try {
-            const decoded = decodeURIComponent(rd.textContent);
-            const d = JSON.parse(decoded);
-            r.renderDataTopKeys = Object.keys(d).slice(0, 20);
-            // 深度搜索有用的 key
-            const interesting = {};
-            const scan = (obj, path = '', depth = 0) => {
-                if (!obj || typeof obj !== 'object' || depth > 6) return;
-                for (const [k, v] of Object.entries(obj)) {
-                    const p = path + '.' + k;
-                    const kl = k.toLowerCase();
-                    if (['aweme_id', 'aweme_list', 'video_list', 'feeds', 'data'].includes(k) && v) {
-                        interesting[p] = {
-                            type: typeof v,
-                            isArray: Array.isArray(v),
-                            length: Array.isArray(v) ? v.length : (typeof v === 'string' ? v.length : null),
-                            sample: JSON.stringify(v).slice(0, 200),
-                        };
-                    }
-                    if (typeof v === 'object' && v !== null) scan(v, p, depth + 1);
-                }
-            };
-            scan(d);
-            r.renderDataInteresting = interesting;
-        } catch(e) {
-            r.renderDataError = e.message;
-        }
-    }
-
-    // 4. 检查全局变量
-    const globals = {};
-    for (const key of ['__NEXT_DATA__', '__RENDER_DATA__', 'RENDER_DATA', '__data', '__INITIAL_STATE__',
-                        '__PRELOADED_STATE__', '__APP_DATA__', '__APOLLO_STATE__', '_SSR_DATA',
-                        'INITIAL_STATE', 'pageData']) {
-        if (window[key]) {
-            globals[key] = typeof window[key] === 'object' ?
-                `object(keys: ${Object.keys(window[key]).slice(0, 10).join(', ')})` :
-                typeof window[key];
-        }
-    }
-    r.globalVars = globals;
-
-    // 5. 页面可见内容样本
-    r.bodyTextSample = document.body?.innerText?.slice(0, 3000) || 'EMPTY';
-
-    // 6. 所有 img 标签 (视频封面通常有图片)
-    const images = [];
-    document.querySelectorAll('img[src]').forEach(img => {
-        const src = img.getAttribute('src') || '';
-        if (src.includes('aweme') || src.includes('douyinpic') || src.includes('byte') || src.includes('tiktok')) {
-            images.push(src.slice(0, 120));
-        }
-    });
-    r.videoRelatedImages = images.slice(0, 10);
-    r.totalImages = document.querySelectorAll('img[src]').length;
-
-    // 7. 检查 iframe
-    r.iframes = Array.from(document.querySelectorAll('iframe')).map(f => ({
-        src: (f.src || '').slice(0, 100),
-        id: f.id,
-    })).slice(0, 5);
-
-    // 8. 检查是否有 video 元素 (说明有视频内容)
-    r.videoElements = document.querySelectorAll('video').length;
-
-    return r;
-}
-"""
-
-
 async def main():
     print("=" * 60)
-    print("抖音爬取诊断脚本 v4 (深度分析搜索结果页)")
+    print("抖音爬取诊断脚本 v5 (拦截 + 评论测试)")
     print("=" * 60)
 
     cookie_dict, cookie_str = get_cookie_from_mongo()
@@ -173,6 +58,7 @@ async def main():
     config.PLATFORM = "dy"
     config.LOGIN_TYPE = "cookie"
     config.COOKIES = cookie_str
+    config.KEYWORDS = KEYWORD
 
     from playwright.async_api import async_playwright
     from tools import utils
@@ -205,23 +91,30 @@ async def main():
 
         page = await context.new_page()
 
-        # 监听网络请求 (捕获搜索 API 响应)
-        api_responses = []
+        # ─── 拦截搜索 API 响应 (完整 body) ───────────────
+        search_results = []  # 存储完整的搜索数据
+        comment_results = []  # 存储评论数据
 
         async def handle_response(response):
             url = response.url
-            if "search" in url and ("aweme" in url or "general" in url):
-                try:
+            try:
+                # 拦截搜索结果
+                if "/search/single/" in url and response.status == 200:
                     body = await response.json()
-                    api_responses.append({
-                        "url": url[:200],
-                        "status": response.status,
-                        "data_len": len(body.get("data", [])) if isinstance(body.get("data"), list) else 0,
-                        "keys": list(body.keys())[:10],
-                        "body_sample": json.dumps(body, ensure_ascii=False)[:500],
-                    })
-                except Exception:
-                    api_responses.append({"url": url[:200], "status": response.status, "error": "not json"})
+                    if body.get("data"):
+                        for item in body["data"]:
+                            aweme_info = item.get("aweme_info")
+                            if aweme_info:
+                                search_results.append(aweme_info)
+
+                # 拦截评论
+                if "/comment/list/" in url and "reply" not in url and response.status == 200:
+                    body = await response.json()
+                    comments = body.get("comments", [])
+                    if comments:
+                        comment_results.extend(comments)
+            except Exception:
+                pass
 
         page.on("response", handle_response)
 
@@ -230,11 +123,9 @@ async def main():
         await page.goto("https://www.douyin.com", wait_until="domcontentloaded", timeout=20000)
         await asyncio.sleep(5)
         print(f"   URL: {page.url}")
-        print(f"   Title: {await page.title()}")
 
-        # ─── 检查登录 ────────────────────────────────────
         has_user_login = await page.evaluate("() => window.localStorage.getItem('HasUserLogin') || ''")
-        print(f"   HasUserLogin = '{has_user_login}'")
+        print(f"   login: {'OK' if has_user_login == '1' else 'NOT LOGGED IN'}")
 
         # ─── 搜索框搜索 ─────────────────────────────────
         print(f"\n2. 搜索: '{KEYWORD}' ...")
@@ -243,7 +134,6 @@ async def main():
             '#search-content-input, input[type="search"], '
             'input[class*="search"], input[class*="Search"]'
         )
-
         if not search_input:
             print("   未找到搜索框!")
             await browser.close()
@@ -254,127 +144,192 @@ async def main():
         await search_input.fill(KEYWORD)
         await asyncio.sleep(0.5)
         await page.keyboard.press("Enter")
-
-        # 等待较长时间让搜索结果加载
-        print("   等待搜索结果加载...")
+        print("   等待搜索结果...")
         await asyncio.sleep(10)
 
-        print(f"   URL: {page.url}")
-        print(f"   Title: {await page.title()}")
-
         title = await page.title()
+        print(f"   Title: {title}")
         if "验证" in title:
-            print("   搜索触发了验证码!")
+            print("   搜索触发验证码!")
             await browser.close()
             return
 
-        # ─── 检查拦截到的 API 响应 ───────────────────────
-        print(f"\n3. 拦截到的搜索 API 响应: {len(api_responses)} 个")
-        for i, resp in enumerate(api_responses):
-            print(f"   [{i}] status={resp.get('status')} url={resp.get('url','')[:100]}")
-            if resp.get("data_len"):
-                print(f"       data_len={resp['data_len']}")
-            if resp.get("body_sample"):
-                print(f"       body: {resp['body_sample'][:300]}")
-
-        # ─── 多次滚动加载 ────────────────────────────────
-        print(f"\n4. 滚动页面加载更多...")
-        for i in range(4):
-            scroll_y = (i + 1) * 500
-            await page.evaluate(f"window.scrollTo(0, {scroll_y})")
+        # 滚动触发更多加载
+        for i in range(3):
+            await page.evaluate(f"window.scrollTo(0, {(i+1)*800})")
             await asyncio.sleep(2)
-            print(f"   scroll {i+1}: y={scroll_y}")
 
-        # 检查滚动后有没有新的 API 响应
-        if len(api_responses) > 0:
-            print(f"   滚动后共 {len(api_responses)} 个 API 响应")
-
-        # ─── 全面分析页面 ────────────────────────────────
-        print(f"\n5. 深度分析页面结构...")
-        analysis = await page.evaluate(DEEP_PAGE_ANALYSIS_JS)
-
-        print(f"\n   === 链接分析 ===")
-        print(f"   总链接数: {analysis.get('totalLinks', 0)}")
-        for cat, links in analysis.get("linkCategories", {}).items():
-            print(f"   [{cat}] ({len(links)}):")
-            for link in links[:3]:
-                print(f"      {link}")
-
-        print(f"\n   === 图片分析 ===")
-        print(f"   总图片数: {analysis.get('totalImages', 0)}")
-        print(f"   视频相关图片: {len(analysis.get('videoRelatedImages', []))}")
-        for img in analysis.get("videoRelatedImages", [])[:3]:
-            print(f"      {img}")
-
-        print(f"\n   === video 元素: {analysis.get('videoElements', 0)} ===")
-
-        print(f"\n   === 命名 script 标签 ===")
-        for s in analysis.get("namedScripts", []):
-            print(f"   #{s['id']} type={s['type']} len={s['contentLen']}")
-
-        print(f"\n   === RENDER_DATA ===")
-        if analysis.get("renderDataLen"):
-            print(f"   长度: {analysis['renderDataLen']}")
-            if analysis.get("renderDataTopKeys"):
-                print(f"   顶层 keys: {analysis['renderDataTopKeys']}")
-            if analysis.get("renderDataInteresting"):
-                print(f"   有用的 keys:")
-                for path, info in analysis["renderDataInteresting"].items():
-                    print(f"      {path}: type={info['type']} isArray={info['isArray']} len={info.get('length')}")
-                    if info.get("sample"):
-                        print(f"         sample: {info['sample'][:200]}")
-        else:
-            print("   不存在")
-
-        print(f"\n   === 全局变量 ===")
-        for k, v in analysis.get("globalVars", {}).items():
-            print(f"   {k}: {v}")
-
-        print(f"\n   === iframe ===")
-        for f in analysis.get("iframes", []):
-            print(f"   #{f.get('id','')} src={f['src']}")
-        if not analysis.get("iframes"):
-            print("   无")
-
-        # ─── 页面文本 ────────────────────────────────────
-        print(f"\n6. 页面可见文本 (前2000字符):")
-        body_text = analysis.get("bodyTextSample", "")
-        # 压缩多余空行
-        lines = [l.strip() for l in body_text.split("\n") if l.strip()]
-        print("   " + "\n   ".join(lines[:60]))
-
-        # ─── 尝试从拦截到的 API 响应中提取 video ids ─────
+        # ─── 解析拦截到的搜索数据 ────────────────────────
+        print(f"\n3. 拦截到 {len(search_results)} 个视频:")
         video_ids = []
-        for resp in api_responses:
-            sample = resp.get("body_sample", "")
-            # 尝试解析
-            try:
-                body = json.loads(sample) if len(sample) < 500 else None
-            except Exception:
-                body = None
-            if body and body.get("data"):
-                for item in body["data"]:
-                    aid = item.get("aweme_info", {}).get("aweme_id", "")
-                    if aid:
-                        video_ids.append(aid)
+        for info in search_results[:10]:
+            aweme_id = info.get("aweme_id", "")
+            desc = info.get("desc", "")[:60]
+            stats = info.get("statistics", {})
+            comment_count = stats.get("comment_count", 0)
+            digg_count = stats.get("digg_count", 0)
+            author = info.get("author", {}).get("nickname", "?")
+            video_ids.append(aweme_id)
+            print(f"   {aweme_id}  likes={digg_count}  comments={comment_count}  @{author}  {desc}")
 
-        if video_ids:
-            print(f"\n从拦截的 API 中提取到 {len(video_ids)} 个视频!")
-            for vid in video_ids[:5]:
-                print(f"   {vid}")
+        if not video_ids:
+            print("   未拦截到视频数据!")
+            await browser.close()
+            return
 
-        # ─── 截图 ────────────────────────────────────────
-        screenshot_path = os.path.join(SCRIPT_DIR, "dy_search_v4.png")
-        await page.screenshot(path=screenshot_path, full_page=False)
-        print(f"\n截图已保存: {screenshot_path}")
-
+        # ═══════════════════════════════════════════════════
+        # 测试评论获取
+        # ═══════════════════════════════════════════════════
         print(f"\n{'='*60}")
-        if video_ids:
-            print(f"结论: 从拦截的 API 响应中找到 {len(video_ids)} 个视频")
-        elif analysis.get("linkCategories", {}).get("video"):
-            print(f"结论: DOM 中有 video 链接但未解析")
+        print(f"4. 测试评论获取 (3种方式)")
+        print(f"{'='*60}")
+
+        test_ids = video_ids[:MAX_VIDEOS]
+        total_fetch = 0
+        total_navigate = 0
+        total_api = 0
+
+        # 创建 DouYinClient (用于 API 方式)
+        from media_platform.douyin.client import DouYinClient
+        from var import request_keyword_var
+        request_keyword_var.set(KEYWORD)
+
+        cookie_str_browser, cookie_dict_browser = utils.convert_cookies(await context.cookies())
+        user_agent = await page.evaluate("() => navigator.userAgent")
+        dy_client = DouYinClient(
+            headers={
+                "User-Agent": user_agent,
+                "Cookie": cookie_str_browser,
+                "Host": "www.douyin.com",
+                "Origin": "https://www.douyin.com/",
+                "Referer": "https://www.douyin.com/",
+                "Content-Type": "application/json;charset=UTF-8",
+            },
+            playwright_page=page,
+            cookie_dict=cookie_dict_browser,
+        )
+
+        for vid in test_ids:
+            print(f"\n--- 视频 {vid} ---")
+
+            # ─── 方式A: 浏览器 fetch (从搜索页发) ─────────
+            print(f"  [A: fetch]")
+            try:
+                fetch_res = await page.evaluate("""
+                    async (awemeId) => {
+                        try {
+                            const params = new URLSearchParams({
+                                aweme_id: awemeId,
+                                cursor: '0',
+                                count: '20',
+                                item_type: '0',
+                                cookie_enabled: 'true',
+                                platform: 'PC',
+                                aid: '6383',
+                                channel: 'channel_pc_web',
+                                version_code: '170400',
+                                version_name: '17.4.0',
+                            });
+                            const url = '/aweme/v1/web/comment/list/?' + params.toString();
+                            const resp = await fetch(url, {
+                                method: 'GET',
+                                credentials: 'include',
+                            });
+                            const data = await resp.json();
+                            return {
+                                status_code: data.status_code,
+                                total: (data.comments || []).length,
+                                has_more: data.has_more,
+                                samples: (data.comments || []).slice(0, 5).map(c => ({
+                                    user: c.user?.nickname || '?',
+                                    text: (c.text || '').slice(0, 60),
+                                    ip: c.ip_label || '',
+                                    likes: c.digg_count || 0,
+                                })),
+                            };
+                        } catch(e) {
+                            return { error: e.message };
+                        }
+                    }
+                """, vid)
+
+                ct = fetch_res.get("total", 0)
+                print(f"  [A: fetch] status={fetch_res.get('status_code')}, 评论={ct}, has_more={fetch_res.get('has_more')}")
+                if ct > 0:
+                    total_fetch += ct
+                    for s in fetch_res.get("samples", []):
+                        print(f"    {s['user']} ({s['ip']}): {s['text']}  [likes={s['likes']}]")
+                elif fetch_res.get("error"):
+                    print(f"  [A: fetch] error: {fetch_res['error']}")
+            except Exception as e:
+                print(f"  [A: fetch] 异常: {e}")
+
+            await asyncio.sleep(1)
+
+            # ─── 方式B: 导航到视频页 + 拦截评论 API ───────
+            print(f"  [B: navigate+intercept]")
+            try:
+                comment_results.clear()
+                video_url = f"https://www.douyin.com/video/{vid}"
+                await page.goto(video_url, wait_until="domcontentloaded", timeout=20000)
+                await asyncio.sleep(6)
+
+                cur_title = await page.title()
+                if "验证" in cur_title:
+                    print(f"  [B] 视频页触发验证码!")
+                else:
+                    # 滚动到评论区
+                    await page.evaluate("window.scrollTo(0, 600)")
+                    await asyncio.sleep(3)
+
+                    ct = len(comment_results)
+                    print(f"  [B: navigate] 拦截到 {ct} 条评论")
+                    if ct > 0:
+                        total_navigate += ct
+                        for c in comment_results[:5]:
+                            u = c.get("user", {}).get("nickname", "?")
+                            t = c.get("text", "")[:60]
+                            ip = c.get("ip_label", "")
+                            likes = c.get("digg_count", 0)
+                            print(f"    {u} ({ip}): {t}  [likes={likes}]")
+            except Exception as e:
+                print(f"  [B: navigate] 异常: {e}")
+
+            await asyncio.sleep(1)
+
+            # ─── 方式C: API (httpx + a_bogus) ─────────────
+            print(f"  [C: API]")
+            try:
+                res = await dy_client.get_aweme_comments(vid, cursor=0)
+                comments = res.get("comments", [])
+                status = res.get("status_code", "?")
+                ct = len(comments) if comments else 0
+                print(f"  [C: API] status={status}, 评论={ct}")
+                if ct > 0:
+                    total_api += ct
+                    for c in comments[:3]:
+                        u = c.get("user", {}).get("nickname", "?")
+                        t = c.get("text", "")[:60]
+                        print(f"    {u}: {t}")
+            except Exception as e:
+                print(f"  [C: API] 异常: {type(e).__name__}: {e}")
+
+            await asyncio.sleep(2)
+
+        # ─── 汇总 ────────────────────────────────────────
+        print(f"\n{'='*60}")
+        print(f"汇总:")
+        print(f"  搜索: 拦截到 {len(video_ids)} 个视频 (搜索框方式)")
+        print(f"  评论: fetch={total_fetch}, navigate+intercept={total_navigate}, API={total_api}")
+        best = max(total_fetch, total_navigate, total_api)
+        if best > 0:
+            methods = []
+            if total_fetch > 0: methods.append(f"fetch({total_fetch})")
+            if total_navigate > 0: methods.append(f"navigate({total_navigate})")
+            if total_api > 0: methods.append(f"API({total_api})")
+            print(f"  结论: 评论获取有效! 可用方式: {', '.join(methods)}")
         else:
-            print(f"结论: 搜索结果页面没有视频数据，可能需要等待更长时间或交互")
+            print(f"  结论: 搜索成功但评论获取全部失败")
         print(f"{'='*60}")
 
         await browser.close()
