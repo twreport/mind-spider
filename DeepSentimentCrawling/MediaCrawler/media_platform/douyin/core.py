@@ -134,66 +134,162 @@ class DouYinCrawler(AbstractCrawler):
             utils.logger.info("[DouYinCrawler.start] Douyin Crawler finished ...")
 
     async def search(self) -> None:
+        """Search douyin keywords using search box + response interception.
+
+        The douyin search API now returns verify_check for direct API calls
+        (httpx + a_bogus). However, typing keywords into the search box on the
+        homepage triggers the browser's own signed request which works correctly.
+        We intercept the browser's /search/single/ responses to extract data.
+        """
         utils.logger.info("[DouYinCrawler.search] Begin search douyin keywords")
-        dy_limit_count = 10  # douyin limit page fixed value
-        if config.CRAWLER_MAX_NOTES_COUNT < dy_limit_count:
-            config.CRAWLER_MAX_NOTES_COUNT = dy_limit_count
         max_notes = config.CRAWLER_MAX_NOTES_COUNT
-        start_page = config.START_PAGE  # start page number
+
         for keyword in config.KEYWORDS.split(","):
             source_keyword_var.set(keyword)
             utils.logger.info(f"[DouYinCrawler.search] Current keyword: {keyword}")
             aweme_list: List[str] = []
-            page = 0
-            dy_search_id = ""
-            while (page - start_page + 1) * dy_limit_count <= max_notes:
-                if page < start_page:
-                    utils.logger.info(f"[DouYinCrawler.search] Skip {page}")
-                    page += 1
-                    continue
+
+            # Collect aweme_info items from intercepted API responses
+            intercepted_items: List[Dict] = []
+
+            async def on_search_response(response):
+                """Intercept /search/single/ responses from the browser."""
                 try:
-                    utils.logger.info(f"[DouYinCrawler.search] search douyin keyword: {keyword}, page: {page}")
-                    posts_res = await self.dy_client.search_info_by_keyword(
-                        keyword=keyword,
-                        offset=page * dy_limit_count - dy_limit_count,
-                        publish_time=PublishTimeType(config.PUBLISH_TIME_TYPE),
-                        search_id=dy_search_id,
-                    )
-                    # === 新增调试代码 START ===
-                    # 打印返回的所有 Key，看看有没有 'data' 或者 'aweme_list'
-                    utils.logger.info(f"[DEBUG] 接口返回的字段 keys: {list(posts_res.keys())}")
+                    if "/search/single/" in response.url and response.status == 200:
+                        body = await response.json()
+                        for item in body.get("data", []):
+                            aweme_info = item.get("aweme_info")
+                            if aweme_info:
+                                intercepted_items.append(aweme_info)
+                except Exception:
+                    pass
 
-                    # 如果返回里直接有 aweme_list，说明结构变了
-                    if "aweme_list" in posts_res and "data" not in posts_res:
-                        utils.logger.info("[DEBUG] 检测到 aweme_list 在根节点，正在修正数据结构...")
-                        posts_res["data"] = [{"aweme_info": item} for item in posts_res["aweme_list"]]
-                    # === 新增调试代码 END ===
+            self.context_page.on("response", on_search_response)
 
-                    if posts_res.get("data") is None or posts_res.get("data") == []:
-                        utils.logger.info(f"[DouYinCrawler.search] 结果为空。Status: {posts_res.get('status_code')}, Msg: {posts_res.get('status_msg')}")
-                        break
-                except DataFetchError:
-                    utils.logger.error(f"[DouYinCrawler.search] search douyin keyword: {keyword} failed")
-                    break
+            try:
+                # Navigate to homepage first
+                await self.context_page.goto(self.index_url, wait_until="domcontentloaded", timeout=20000)
+                await asyncio.sleep(3)
 
-                page += 1
-                if "data" not in posts_res:
-                    utils.logger.error(f"[DouYinCrawler.search] search douyin keyword: {keyword} failed，账号也许被风控了。")
-                    break
-                dy_search_id = posts_res.get("extra", {}).get("logid", "")
-                for post_item in posts_res.get("data"):
-                    try:
-                        aweme_info: Dict = (post_item.get("aweme_info") or post_item.get("aweme_mix_info", {}).get("mix_items")[0])
-                    except TypeError:
-                        continue
-                    aweme_list.append(aweme_info.get("aweme_id", ""))
-                    await douyin_store.update_douyin_aweme(aweme_item=aweme_info)
-                    await self.get_aweme_media(aweme_item=aweme_info)
-                # Sleep after each page navigation
-                await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
-                utils.logger.info(f"[DouYinCrawler.search] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page-1}")
+                # Find and use the search box
+                search_input = await self.context_page.query_selector(
+                    'input[data-e2e="searchbar-input"], input[placeholder*="搜索"], '
+                    '#search-content-input, input[type="search"], '
+                    'input[class*="search"], input[class*="Search"]'
+                )
+                if not search_input:
+                    utils.logger.error("[DouYinCrawler.search] Could not find search input on homepage")
+                    # Fallback to API search
+                    await self._search_via_api(keyword, max_notes, aweme_list)
+                else:
+                    await search_input.click()
+                    await asyncio.sleep(0.5)
+                    await search_input.fill(keyword)
+                    await asyncio.sleep(0.5)
+                    await self.context_page.keyboard.press("Enter")
+                    await asyncio.sleep(8)
+
+                    title = await self.context_page.title()
+                    if "验证" in title:
+                        utils.logger.warning("[DouYinCrawler.search] Search triggered CAPTCHA page, falling back to API")
+                        await self._search_via_api(keyword, max_notes, aweme_list)
+                    else:
+                        utils.logger.info(
+                            f"[DouYinCrawler.search] Search page loaded: {title}, "
+                            f"intercepted {len(intercepted_items)} items so far"
+                        )
+
+                        # Scroll to trigger lazy loading and load more results
+                        collected = len(intercepted_items)
+                        scroll_rounds = max(1, (max_notes - collected) // 10 + 1)
+                        for i in range(min(scroll_rounds, 10)):
+                            if len(intercepted_items) >= max_notes:
+                                break
+                            await self.context_page.evaluate(f"window.scrollTo(0, {(i + 1) * 1000})")
+                            await asyncio.sleep(3)
+                            utils.logger.info(
+                                f"[DouYinCrawler.search] Scroll {i+1}, intercepted {len(intercepted_items)} items"
+                            )
+
+                        # Process intercepted items
+                        for aweme_info in intercepted_items[:max_notes]:
+                            aweme_id = aweme_info.get("aweme_id", "")
+                            if aweme_id and aweme_id not in aweme_list:
+                                aweme_list.append(aweme_id)
+                                await douyin_store.update_douyin_aweme(aweme_item=aweme_info)
+                                await self.get_aweme_media(aweme_item=aweme_info)
+
+                        utils.logger.info(
+                            f"[DouYinCrawler.search] keyword:{keyword}, "
+                            f"intercepted {len(intercepted_items)} items, "
+                            f"stored {len(aweme_list)} unique aweme_ids"
+                        )
+
+                        # If interception got nothing, fall back to API
+                        if not aweme_list:
+                            utils.logger.warning("[DouYinCrawler.search] No results from interception, trying API fallback")
+                            await self._search_via_api(keyword, max_notes, aweme_list)
+
+            finally:
+                # Remove the response listener
+                self.context_page.remove_listener("response", on_search_response)
+
             utils.logger.info(f"[DouYinCrawler.search] keyword:{keyword}, aweme_list:{aweme_list}")
             await self.batch_get_note_comments(aweme_list)
+
+    async def _search_via_api(self, keyword: str, max_notes: int, aweme_list: List[str]) -> None:
+        """Fallback: search via direct API call (httpx + a_bogus).
+
+        May fail with verify_check if the signing is outdated.
+        """
+        utils.logger.info(f"[DouYinCrawler._search_via_api] Trying API search for: {keyword}")
+        dy_limit_count = 10
+        start_page = config.START_PAGE
+        page = 0
+        dy_search_id = ""
+        while (page - start_page + 1) * dy_limit_count <= max_notes:
+            if page < start_page:
+                page += 1
+                continue
+            try:
+                posts_res = await self.dy_client.search_info_by_keyword(
+                    keyword=keyword,
+                    offset=page * dy_limit_count - dy_limit_count,
+                    publish_time=PublishTimeType(config.PUBLISH_TIME_TYPE),
+                    search_id=dy_search_id,
+                )
+                if "aweme_list" in posts_res and "data" not in posts_res:
+                    posts_res["data"] = [{"aweme_info": item} for item in posts_res["aweme_list"]]
+
+                if not posts_res.get("data"):
+                    nil_type = posts_res.get("search_nil_info", {}).get("search_nil_type", "")
+                    utils.logger.info(
+                        f"[DouYinCrawler._search_via_api] Empty result. "
+                        f"status={posts_res.get('status_code')}, nil_type={nil_type}"
+                    )
+                    break
+            except DataFetchError:
+                utils.logger.error(f"[DouYinCrawler._search_via_api] search failed for: {keyword}")
+                break
+
+            page += 1
+            if "data" not in posts_res:
+                break
+            dy_search_id = posts_res.get("extra", {}).get("logid", "")
+            for post_item in posts_res.get("data"):
+                try:
+                    aweme_info: Dict = (
+                        post_item.get("aweme_info")
+                        or post_item.get("aweme_mix_info", {}).get("mix_items")[0]
+                    )
+                except TypeError:
+                    continue
+                aweme_id = aweme_info.get("aweme_id", "")
+                if aweme_id and aweme_id not in aweme_list:
+                    aweme_list.append(aweme_id)
+                    await douyin_store.update_douyin_aweme(aweme_item=aweme_info)
+                    await self.get_aweme_media(aweme_item=aweme_info)
+            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
 
     async def get_specified_awemes(self):
         """Get the information and comments of the specified post from URLs or IDs"""
