@@ -132,6 +132,58 @@ API 搜索（httpx + a_bogus 签名）返回 `search_nil_type: "verify_check"`�
 - 测试脚本能工作但正式代码不行，就是因为这个 UA 差异
 - 修复：在 `DouYinCrawler.__init__` 中设置 `self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"`
 
+## 贴吧(tieba)调试记录
+
+### 问题
+Python 的 httpx/requests 库发出的 HTTPS 请求被百度 TLS 指纹检测（JA3 fingerprinting）拦截。
+Playwright 无头浏览器直接访问贴吧首页也会触发验证码，污染 cookie。
+
+### 排查过程
+1. httpx 请求超时或被拒绝
+2. 换 requests 库 — 同样失败
+3. Playwright `page.evaluate(fetch())` — 仍然失败
+4. **系统 curl 命令** — 成功！curl 用的是 OpenSSL 的 TLS 指纹，和 Python 完全不同
+
+### 解决方案
+重写 `tieba/client.py`，所有 HTTP 请求改用 curl 子进程：
+
+核心方法 `_curl_get(url)`：
+```python
+async def _curl_get(self, url: str) -> str:
+    cmd = [
+        "curl", "-sS", "-L", "--max-time", "30", "--compressed",
+        "-D", "/dev/stderr",
+        "-H", f"User-Agent: {ua}",
+        "-H", f"Cookie: {cookie_str}",
+        "-H", "Referer: https://tieba.baidu.com/",
+        url,
+    ]
+    result = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, timeout=35)
+```
+
+关键设计：
+- `asyncio.to_thread(subprocess.run, ...)` — 不阻塞异步事件循环
+- **用原始 config.COOKIES**（从 MongoDB 加载的），不用浏览器 cookie — 因为浏览器访问首页会触发验证码，污染 cookie
+- 自动检测编码：搜索页用 GBK，详情页用 UTF-8，通过 HTTP 响应头和 HTML meta 标签判断
+- `-D /dev/stderr` 把响应头输出到 stderr 用于编码检测
+
+已转换为 curl 的方法：
+- `get_notes_by_keyword()` — 搜索
+- `get_note_by_id()` — 帖子详情
+- `get_note_all_comments()` — 评论
+- `get_comments_all_sub_comments()` — 子评论
+- `get_notes_by_tieba_name()` — 吧内帖子
+- `get_creator_info_by_url()` — 用户信息
+
+`tieba/core.py` 的反检测措施：
+- 注入 JS 覆盖 `navigator.webdriver`、伪造 `navigator.chrome`、清除 ChromeDriver 痕迹
+- 不直接访问 tieba.baidu.com，先访问 baidu.com 再点击贴吧链接（模拟真人导航路径）
+- cookie 注入在导航之前完成，避免自动跳转到验证码页
+
+### 为什么 curl 有效
+系统 curl 使用 OpenSSL 的 TLS 实现，其 JA3 指纹与 Python 的 ssl/urllib3 完全不同。
+百度的 JA3 指纹检测无法将 curl 识别为爬虫，请求正常通过（200, 52KB, 1.3s）。
+
 ## 小红书(xhs)待测试
 
 ### 建议测试步骤
