@@ -81,18 +81,36 @@ class DouYinCrawler(AbstractCrawler):
 
             # 在导航前注入 cookie，确保页面以已登录状态加载
             if config.LOGIN_TYPE == "cookie" and config.COOKIES:
-                for key, value in utils.convert_str_cookie_to_dict(config.COOKIES).items():
+                cookie_dict = utils.convert_str_cookie_to_dict(config.COOKIES)
+                for key, value in cookie_dict.items():
                     await self.browser_context.add_cookies([{
                         'name': key,
                         'value': value,
                         'domain': ".douyin.com",
                         'path': "/"
                     }])
+                # 补充 LOGIN_STATUS=1，Chrome 扩展可能未导出此 cookie，
+                # 但有 sessionid 即代表已登录
+                if "sessionid" in cookie_dict and "LOGIN_STATUS" not in cookie_dict:
+                    await self.browser_context.add_cookies([{
+                        'name': 'LOGIN_STATUS',
+                        'value': '1',
+                        'domain': ".douyin.com",
+                        'path': "/"
+                    }])
+                    utils.logger.info("[DouYinCrawler] 自动补充 LOGIN_STATUS=1 cookie")
 
             await self.context_page.goto(self.index_url)
+            # 等待页面 JS 初始化完成（设置 localStorage 等）
+            await asyncio.sleep(3)
 
             self.dy_client = await self.create_douyin_client(httpx_proxy_format)
-            if not await self.dy_client.pong(browser_context=self.browser_context):
+            if config.LOGIN_TYPE == "cookie" and config.COOKIES:
+                # cookie 模式：已在导航前注入，跳过 pong/login 流程
+                # 直接从浏览器上下文更新客户端 cookie（包含服务端新设置的 cookie）
+                utils.logger.info("[DouYinCrawler] Cookie 模式，跳过 pong/login，直接使用已注入的 cookie")
+                await self.dy_client.update_cookies(browser_context=self.browser_context)
+            elif not await self.dy_client.pong(browser_context=self.browser_context):
                 login_obj = DouYinLogin(
                     login_type=config.LOGIN_TYPE,
                     login_phone="",  # you phone number

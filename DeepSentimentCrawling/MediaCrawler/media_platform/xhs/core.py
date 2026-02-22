@@ -95,10 +95,17 @@ class XiaoHongShuCrawler(AbstractCrawler):
                     }])
 
             await self.context_page.goto(self.index_url)
+            # 等待页面 JS 初始化完成（设置 localStorage 等签名所需数据）
+            await asyncio.sleep(3)
 
             # Create a client to interact with the xiaohongshu website.
             self.xhs_client = await self.create_xhs_client(httpx_proxy_format)
-            if not await self.xhs_client.pong():
+            if config.LOGIN_TYPE == "cookie" and config.COOKIES:
+                # cookie 模式：已在导航前注入，跳过 pong/login 流程
+                # 直接从浏览器上下文更新客户端 cookie（包含服务端新设置的 cookie）
+                utils.logger.info("[XiaoHongShuCrawler] Cookie 模式，跳过 pong/login，直接使用已注入的 cookie")
+                await self.xhs_client.update_cookies(browser_context=self.browser_context)
+            elif not await self.xhs_client.pong():
                 login_obj = XiaoHongShuLogin(
                     login_type=config.LOGIN_TYPE,
                     login_phone="",  # input your phone number
@@ -180,8 +187,8 @@ class XiaoHongShuCrawler(AbstractCrawler):
                     # Sleep after each page navigation
                     await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
                     utils.logger.info(f"[XiaoHongShuCrawler.search] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page-1}")
-                except DataFetchError:
-                    utils.logger.error("[XiaoHongShuCrawler.search] Get note detail error")
+                except (DataFetchError, RetryError) as e:
+                    utils.logger.error(f"[XiaoHongShuCrawler.search] Get note detail error: {e}")
                     break
 
     async def get_creators_and_notes(self) -> None:
