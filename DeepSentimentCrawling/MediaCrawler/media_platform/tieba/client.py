@@ -284,35 +284,44 @@ class BaiduTieBaClient(AbstractApiClient):
             utils.logger.error(f"[BaiduTieBaClient.get_notes_by_keyword] traceback: {traceback.format_exc()}")
             raise
 
+    async def _curl_get(self, url: str) -> str:
+        """通过curl子进程获取页面HTML (绕过Python TLS指纹拦截)"""
+        import subprocess
+
+        cookie_str = config.COOKIES if hasattr(config, 'COOKIES') and config.COOKIES else self.headers.get("Cookie", "")
+        ua = self.headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+        cmd = [
+            "curl", "-sS", "-L", "--max-time", "30", "--compressed",
+            "-H", f"User-Agent: {ua}",
+            "-H", f"Cookie: {cookie_str}",
+            "-H", "Referer: https://tieba.baidu.com/",
+            "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "-H", "Accept-Language: zh-CN,zh;q=0.9,en;q=0.8",
+            url,
+        ]
+        result = await asyncio.to_thread(
+            subprocess.run, cmd, capture_output=True, timeout=35
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.decode("utf-8", errors="replace")
+            raise Exception(f"curl failed (rc={result.returncode}): {stderr}")
+        return result.stdout.decode("gbk", errors="replace")
+
     async def get_note_by_id(self, note_id: str) -> TiebaNote:
         """
-        根据帖子ID获取帖子详情 (使用Playwright访问页面,避免API检测)
-        Args:
-            note_id: 帖子ID
-
-        Returns:
-            TiebaNote: 帖子详情对象
+        根据帖子ID获取帖子详情 (使用curl绕过TLS指纹拦截)
         """
-        if not self.playwright_page:
-            utils.logger.error("[BaiduTieBaClient.get_note_by_id] playwright_page is None, cannot use browser mode")
-            raise Exception("playwright_page is required for browser-based note detail fetching")
-
-        # 构造帖子详情URL
         note_url = f"{self._host}/p/{note_id}"
-        utils.logger.info(f"[BaiduTieBaClient.get_note_by_id] 访问帖子详情页面: {note_url}")
+        utils.logger.info(f"[BaiduTieBaClient.get_note_by_id] curl 访问帖子详情: {note_url}")
 
         try:
-            # 使用Playwright访问帖子详情页面
-            await self.playwright_page.goto(note_url, wait_until="domcontentloaded")
+            page_content = await self._curl_get(note_url)
+            utils.logger.info(f"[BaiduTieBaClient.get_note_by_id] 获取帖子详情HTML,长度: {len(page_content)}")
 
-            # 等待页面加载,使用配置文件中的延时设置
-            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+            if "百度安全验证" in page_content[:500]:
+                utils.logger.warning(f"[BaiduTieBaClient.get_note_by_id] 帖子 {note_id} 触发百度安全验证")
+                raise Exception("百度安全验证")
 
-            # 获取页面HTML内容
-            page_content = await self.playwright_page.content()
-            utils.logger.info(f"[BaiduTieBaClient.get_note_by_id] 成功获取帖子详情HTML,长度: {len(page_content)}")
-
-            # 提取帖子详情
             note_detail = self._page_extractor.extract_note_detail(page_content)
             return note_detail
 
@@ -328,38 +337,22 @@ class BaiduTieBaClient(AbstractApiClient):
         max_count: int = 10,
     ) -> List[TiebaComment]:
         """
-        获取指定帖子下的所有一级评论 (使用Playwright访问页面,避免API检测)
-        Args:
-            note_detail: 帖子详情对象
-            crawl_interval: 爬取一次笔记的延迟单位（秒）
-            callback: 一次笔记爬取结束后的回调函数
-            max_count: 一次帖子爬取的最大评论数量
-        Returns:
-            List[TiebaComment]: 评论列表
+        获取指定帖子下的所有一级评论 (使用curl绕过TLS指纹拦截)
         """
-        if not self.playwright_page:
-            utils.logger.error("[BaiduTieBaClient.get_note_all_comments] playwright_page is None, cannot use browser mode")
-            raise Exception("playwright_page is required for browser-based comment fetching")
-
         result: List[TiebaComment] = []
         current_page = 1
 
         while note_detail.total_replay_page >= current_page and len(result) < max_count:
-            # 构造评论页URL
             comment_url = f"{self._host}/p/{note_detail.note_id}?pn={current_page}"
-            utils.logger.info(f"[BaiduTieBaClient.get_note_all_comments] 访问评论页面: {comment_url}")
+            utils.logger.info(f"[BaiduTieBaClient.get_note_all_comments] curl 评论页: {comment_url}")
 
             try:
-                # 使用Playwright访问评论页面
-                await self.playwright_page.goto(comment_url, wait_until="domcontentloaded")
+                page_content = await self._curl_get(comment_url)
 
-                # 等待页面加载,使用配置文件中的延时设置
-                await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                if "百度安全验证" in page_content[:500]:
+                    utils.logger.warning("[BaiduTieBaClient.get_note_all_comments] 触发百度安全验证")
+                    break
 
-                # 获取页面HTML内容
-                page_content = await self.playwright_page.content()
-
-                # 提取评论
                 comments = self._page_extractor.extract_tieba_note_parment_comments(
                     page_content, note_id=note_detail.note_id
                 )
@@ -368,7 +361,6 @@ class BaiduTieBaClient(AbstractApiClient):
                     utils.logger.info(f"[BaiduTieBaClient.get_note_all_comments] 第{current_page}页没有评论,停止爬取")
                     break
 
-                # 限制评论数量
                 if len(result) + len(comments) > max_count:
                     comments = comments[:max_count - len(result)]
 
@@ -377,7 +369,6 @@ class BaiduTieBaClient(AbstractApiClient):
 
                 result.extend(comments)
 
-                # 获取所有子评论
                 await self.get_comments_all_sub_comments(
                     comments, crawl_interval=crawl_interval, callback=callback
                 )
@@ -399,21 +390,10 @@ class BaiduTieBaClient(AbstractApiClient):
         callback: Optional[Callable] = None,
     ) -> List[TiebaComment]:
         """
-        获取指定评论下的所有子评论 (使用Playwright访问页面,避免API检测)
-        Args:
-            comments: 评论列表
-            crawl_interval: 爬取一次笔记的延迟单位（秒）
-            callback: 一次笔记爬取结束后的回调函数
-
-        Returns:
-            List[TiebaComment]: 子评论列表
+        获取指定评论下的所有子评论 (使用curl绕过TLS指纹拦截)
         """
         if not config.ENABLE_GET_SUB_COMMENTS:
             return []
-
-        if not self.playwright_page:
-            utils.logger.error("[BaiduTieBaClient.get_comments_all_sub_comments] playwright_page is None, cannot use browser mode")
-            raise Exception("playwright_page is required for browser-based sub-comment fetching")
 
         all_sub_comments: List[TiebaComment] = []
 
@@ -425,7 +405,6 @@ class BaiduTieBaClient(AbstractApiClient):
             max_sub_page_num = parment_comment.sub_comment_count // 10 + 1
 
             while max_sub_page_num >= current_page:
-                # 构造子评论URL
                 sub_comment_url = (
                     f"{self._host}/p/comment?"
                     f"tid={parment_comment.note_id}&"
@@ -433,19 +412,15 @@ class BaiduTieBaClient(AbstractApiClient):
                     f"fid={parment_comment.tieba_id}&"
                     f"pn={current_page}"
                 )
-                utils.logger.info(f"[BaiduTieBaClient.get_comments_all_sub_comments] 访问子评论页面: {sub_comment_url}")
+                utils.logger.info(f"[BaiduTieBaClient.get_comments_all_sub_comments] curl 子评论: {sub_comment_url}")
 
                 try:
-                    # 使用Playwright访问子评论页面
-                    await self.playwright_page.goto(sub_comment_url, wait_until="domcontentloaded")
+                    page_content = await self._curl_get(sub_comment_url)
 
-                    # 等待页面加载,使用配置文件中的延时设置
-                    await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                    if "百度安全验证" in page_content[:500]:
+                        utils.logger.warning("[BaiduTieBaClient.get_comments_all_sub_comments] 触发百度安全验证")
+                        break
 
-                    # 获取页面HTML内容
-                    page_content = await self.playwright_page.content()
-
-                    # 提取子评论
                     sub_comments = self._page_extractor.extract_tieba_note_sub_comments(
                         page_content, parent_comment=parment_comment
                     )
@@ -476,34 +451,19 @@ class BaiduTieBaClient(AbstractApiClient):
 
     async def get_notes_by_tieba_name(self, tieba_name: str, page_num: int) -> List[TiebaNote]:
         """
-        根据贴吧名称获取帖子列表 (使用Playwright访问页面,避免API检测)
-        Args:
-            tieba_name: 贴吧名称
-            page_num: 分页页码
-
-        Returns:
-            List[TiebaNote]: 帖子列表
+        根据贴吧名称获取帖子列表 (使用curl绕过TLS指纹拦截)
         """
-        if not self.playwright_page:
-            utils.logger.error("[BaiduTieBaClient.get_notes_by_tieba_name] playwright_page is None, cannot use browser mode")
-            raise Exception("playwright_page is required for browser-based tieba note fetching")
-
-        # 构造贴吧帖子列表URL
         tieba_url = f"{self._host}/f?kw={quote(tieba_name)}&pn={page_num}"
-        utils.logger.info(f"[BaiduTieBaClient.get_notes_by_tieba_name] 访问贴吧页面: {tieba_url}")
+        utils.logger.info(f"[BaiduTieBaClient.get_notes_by_tieba_name] curl 贴吧页面: {tieba_url}")
 
         try:
-            # 使用Playwright访问贴吧页面
-            await self.playwright_page.goto(tieba_url, wait_until="domcontentloaded")
+            page_content = await self._curl_get(tieba_url)
+            utils.logger.info(f"[BaiduTieBaClient.get_notes_by_tieba_name] 获取贴吧页面HTML,长度: {len(page_content)}")
 
-            # 等待页面加载,使用配置文件中的延时设置
-            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+            if "百度安全验证" in page_content[:500]:
+                utils.logger.warning("[BaiduTieBaClient.get_notes_by_tieba_name] 触发百度安全验证")
+                return []
 
-            # 获取页面HTML内容
-            page_content = await self.playwright_page.content()
-            utils.logger.info(f"[BaiduTieBaClient.get_notes_by_tieba_name] 成功获取贴吧页面HTML,长度: {len(page_content)}")
-
-            # 提取帖子列表
             notes = self._page_extractor.extract_tieba_note_list(page_content)
             utils.logger.info(f"[BaiduTieBaClient.get_notes_by_tieba_name] 提取到 {len(notes)} 条帖子")
             return notes
@@ -514,30 +474,13 @@ class BaiduTieBaClient(AbstractApiClient):
 
     async def get_creator_info_by_url(self, creator_url: str) -> str:
         """
-        根据创作者URL获取创作者信息 (使用Playwright访问页面,避免API检测)
-        Args:
-            creator_url: 创作者主页URL
-
-        Returns:
-            str: 页面HTML内容
+        根据创作者URL获取创作者信息 (使用curl绕过TLS指纹拦截)
         """
-        if not self.playwright_page:
-            utils.logger.error("[BaiduTieBaClient.get_creator_info_by_url] playwright_page is None, cannot use browser mode")
-            raise Exception("playwright_page is required for browser-based creator info fetching")
-
-        utils.logger.info(f"[BaiduTieBaClient.get_creator_info_by_url] 访问创作者主页: {creator_url}")
+        utils.logger.info(f"[BaiduTieBaClient.get_creator_info_by_url] curl 创作者主页: {creator_url}")
 
         try:
-            # 使用Playwright访问创作者主页
-            await self.playwright_page.goto(creator_url, wait_until="domcontentloaded")
-
-            # 等待页面加载,使用配置文件中的延时设置
-            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
-
-            # 获取页面HTML内容
-            page_content = await self.playwright_page.content()
-            utils.logger.info(f"[BaiduTieBaClient.get_creator_info_by_url] 成功获取创作者主页HTML,长度: {len(page_content)}")
-
+            page_content = await self._curl_get(creator_url)
+            utils.logger.info(f"[BaiduTieBaClient.get_creator_info_by_url] 获取创作者主页HTML,长度: {len(page_content)}")
             return page_content
 
         except Exception as e:
