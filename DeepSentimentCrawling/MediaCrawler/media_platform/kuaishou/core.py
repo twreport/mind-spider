@@ -179,11 +179,16 @@ class KuaishouCrawler(AbstractCrawler):
 
                 # batch fetch video comments
                 page += 1
-                
+
                 # Sleep after page navigation
                 await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
                 utils.logger.info(f"[KuaishouCrawler.search] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page-1}")
-                
+
+                # 导航到第一个视频页面，建立评论 API 所需的 session
+                if video_id_list:
+                    await self.ks_client.prepare_comment_session(video_id_list[0])
+                    await self.ks_client.update_cookies(browser_context=self.browser_context)
+
                 await self.batch_get_video_comments(video_id_list)
 
     async def get_specified_videos(self):

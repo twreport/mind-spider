@@ -74,6 +74,19 @@ class KuaiShouClient(AbstractApiClient):
             raise DataFetchError(result.get("errors", "unknown error"))
         return result.get("data", {})
 
+    async def prepare_comment_session(self, photo_id: str):
+        """导航到视频页面，让 JS 设置评论 API 所需的 cookie/token"""
+        video_url = f"https://www.kuaishou.com/short-video/{photo_id}"
+        try:
+            utils.logger.info(f"[KuaiShouClient.prepare_comment_session] 导航到视频页: {video_url}")
+            await self.playwright_page.goto(video_url, wait_until="domcontentloaded", timeout=15000)
+            await asyncio.sleep(3)  # 等待 JS 执行完毕，设置 cookie/token
+            utils.logger.info(
+                f"[KuaiShouClient.prepare_comment_session] 页面加载完成, URL: {self.playwright_page.url}"
+            )
+        except Exception as e:
+            utils.logger.warning(f"[KuaiShouClient.prepare_comment_session] 导航失败: {e}")
+
     async def get(self, uri: str, params=None) -> Dict:
         final_uri = uri
         if isinstance(params, dict):
