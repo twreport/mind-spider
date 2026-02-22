@@ -46,6 +46,7 @@ class DouYinCrawler(AbstractCrawler):
     def __init__(self) -> None:
         self.index_url = "https://www.douyin.com"
         self.cdp_manager = None
+        self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
     async def start(self) -> None:
         playwright_proxy_format, httpx_proxy_format = None, None
@@ -71,7 +72,7 @@ class DouYinCrawler(AbstractCrawler):
                 self.browser_context = await self.launch_browser(
                     chromium,
                     playwright_proxy_format,
-                    user_agent=None,
+                    user_agent=self.user_agent,
                     headless=config.HEADLESS,
                 )
                 # stealth.min.js is a js script to prevent the website from detecting the crawler.
@@ -171,6 +172,12 @@ class DouYinCrawler(AbstractCrawler):
                 await self.context_page.goto(self.index_url, wait_until="domcontentloaded", timeout=20000)
                 await asyncio.sleep(5)
 
+                page_url = self.context_page.url
+                page_title = await self.context_page.title()
+                utils.logger.info(
+                    f"[DouYinCrawler.search] Homepage loaded: url={page_url}, title={page_title}"
+                )
+
                 # Find and use the search box (wait for it to appear)
                 search_selectors = (
                     'input[data-e2e="searchbar-input"], input[placeholder*="搜索"], '
@@ -187,6 +194,18 @@ class DouYinCrawler(AbstractCrawler):
                     search_input = await self.context_page.query_selector(search_selectors)
 
                 if not search_input:
+                    # Debug: dump all input elements on page
+                    inputs_debug = await self.context_page.evaluate("""
+                        () => Array.from(document.querySelectorAll('input')).map(i => ({
+                            type: i.type, placeholder: i.placeholder,
+                            className: (i.className || '').slice(0, 60),
+                            id: i.id, visible: i.offsetHeight > 0,
+                        })).slice(0, 10)
+                    """)
+                    utils.logger.error(
+                        f"[DouYinCrawler.search] Could not find search input. "
+                        f"Page inputs: {inputs_debug}"
+                    )
                     utils.logger.error("[DouYinCrawler.search] Could not find search input on homepage")
                     # Fallback to API search
                     await self._search_via_api(keyword, max_notes, aweme_list)
