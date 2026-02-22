@@ -12,7 +12,7 @@ import os
 import time
 from typing import Optional
 
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from loguru import logger
 from playwright.async_api import async_playwright, Browser, BrowserContext
@@ -197,6 +197,9 @@ async def login_page(platform: str, token: str = Query("")):
     </head>
     <body>
         <h1>{platform_name} 扫码登录</h1>
+
+        <!-- 方式一：扫码登录 -->
+        <h3>方式一：扫码登录</h3>
         <p>请用 {platform_name} APP 扫描下方二维码（长按图片可保存到相册）</p>
         <p class="tip" style="color: #e8a339; font-weight: bold;">扫码后请在手机上点击「确认登录」</p>
 
@@ -207,7 +210,19 @@ async def login_page(platform: str, token: str = Query("")):
 
         <button onclick="startLogin()">获取二维码</button>
         <button id="btn-confirm" onclick="confirmLogin()" style="display:none; background:#52c41a; margin-left:10px;">我已扫码并确认</button>
-        <p class="tip">二维码获取后，页面将自动检测登录状态；若自动检测无反应，请在手机确认后点击绿色按钮</p>
+        <p class="tip">若扫码登录不成功（如抖音），请使用下方的 Cookie 粘贴方式</p>
+
+        <!-- 方式二：Cookie 粘贴 -->
+        <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
+        <h3>方式二：手动粘贴 Cookie</h3>
+        <p style="text-align:left; font-size:14px; color:#666;">
+            在电脑浏览器中登录 {platform_name}，按 F12 打开开发者工具 → Application → Cookies，<br>
+            复制所有 cookie（格式：<code>name1=value1; name2=value2; ...</code>），粘贴到下方：
+        </p>
+        <textarea id="cookie-input" rows="4" style="width:100%; font-family:monospace; font-size:13px; padding:8px; border:1px solid #ddd; border-radius:4px;" placeholder="name1=value1; name2=value2; ..."></textarea>
+        <br><br>
+        <button onclick="saveCookie()" style="background:#fa8c16;">保存 Cookie</button>
+        <div id="cookie-status" style="margin-top:10px;"></div>
 
         <script>
             const platform = "{platform}";
@@ -283,6 +298,35 @@ async def login_page(platform: str, token: str = Query("")):
                 }} catch (e) {{
                     document.getElementById("status").innerHTML =
                         `<p class="error">检测失败: ${{e.message}}</p>`;
+                }}
+            }}
+
+            async function saveCookie() {{
+                const cookieStr = document.getElementById("cookie-input").value.trim();
+                if (!cookieStr) {{
+                    document.getElementById("cookie-status").innerHTML =
+                        '<p class="error">请先粘贴 Cookie 字符串</p>';
+                    return;
+                }}
+                document.getElementById("cookie-status").innerHTML = '<p class="loading">正在保存...</p>';
+                try {{
+                    const resp = await fetch(`/login/${{platform}}/paste?token=${{token}}`, {{
+                        method: 'POST',
+                        headers: {{'Content-Type': 'application/json'}},
+                        body: JSON.stringify({{cookie_str: cookieStr}})
+                    }});
+                    const data = await resp.json();
+                    if (data.status === "success") {{
+                        if (pollTimer) clearInterval(pollTimer);
+                        document.getElementById("cookie-status").innerHTML =
+                            `<p class="success">✓ 已保存 ${{data.count}} 个 Cookie！</p>`;
+                    }} else {{
+                        document.getElementById("cookie-status").innerHTML =
+                            `<p class="error">${{data.message}}</p>`;
+                    }}
+                }} catch (e) {{
+                    document.getElementById("cookie-status").innerHTML =
+                        `<p class="error">保存失败: ${{e.message}}</p>`;
                 }}
             }}
 
@@ -555,6 +599,61 @@ async def confirm_login(platform: str, token: str = Query("")):
 
     except Exception as e:
         logger.error(f"[LoginConsole] {platform} 确认检测异常: {e}")
+        return JSONResponse({"status": "error", "message": str(e)})
+
+
+@app.post("/login/{platform}/paste")
+async def paste_cookies(platform: str, request: Request, token: str = Query("")):
+    """用户手动粘贴 cookie 字符串保存"""
+    _check_token(token)
+
+    if platform not in _PLATFORM_LOGIN:
+        raise HTTPException(status_code=404, detail=f"不支持的平台: {platform}")
+
+    try:
+        body = await request.json()
+        cookie_str = body.get("cookie_str", "").strip()
+        if not cookie_str:
+            return JSONResponse({"status": "error", "message": "Cookie 字符串为空"})
+
+        # 解析 "name1=value1; name2=value2; ..." 格式
+        cookie_dict = {}
+        for item in cookie_str.split(";"):
+            item = item.strip()
+            if "=" in item:
+                key, value = item.split("=", 1)
+                cookie_dict[key.strip()] = value.strip()
+
+        if not cookie_dict:
+            return JSONResponse({"status": "error", "message": "未能解析出任何 Cookie"})
+
+        # 检查关键 session cookie 是否存在
+        session_key = _PLATFORM_LOGIN[platform]["session_key"]
+        if session_key not in cookie_dict:
+            logger.warning(f"[LoginConsole] {platform} 粘贴的 Cookie 中缺少 {session_key}，仍然保存")
+
+        # 保存
+        if _cookie_manager:
+            _cookie_manager.save_cookies(platform, cookie_dict)
+
+        # 清理可能存在的活跃会话
+        if platform in _active_sessions:
+            session = _active_sessions.pop(platform)
+            try:
+                page = session.get("page")
+                if page:
+                    await page.close()
+                ctx = session.get("context")
+                if ctx:
+                    await ctx.close()
+            except Exception:
+                pass
+
+        logger.info(f"[LoginConsole] {platform} 手动粘贴 Cookie 成功，共 {len(cookie_dict)} 个")
+        return JSONResponse({"status": "success", "count": len(cookie_dict)})
+
+    except Exception as e:
+        logger.error(f"[LoginConsole] {platform} Cookie 粘贴异常: {e}")
         return JSONResponse({"status": "error", "message": str(e)})
 
 
