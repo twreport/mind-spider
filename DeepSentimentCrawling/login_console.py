@@ -8,6 +8,7 @@ LoginConsole — FastAPI 远程登录控制台
 
 import asyncio
 import base64
+import os
 import time
 from typing import Optional
 
@@ -27,6 +28,11 @@ from ms_config import settings
 from DeepSentimentCrawling.cookie_manager import CookieManager
 
 app = FastAPI(title="MindSpider Login Console", docs_url=None, redoc_url=None)
+
+# stealth 脚本路径
+_STEALTH_JS = os.path.join(
+    os.path.dirname(__file__), "MediaCrawler", "libs", "stealth.min.js"
+)
 
 # 全局状态
 _cookie_manager: Optional[CookieManager] = None
@@ -289,10 +295,43 @@ async def get_qr(platform: str, token: str = Query("")):
             ),
             viewport={"width": 1280, "height": 800},
         )
+
+        # 加载 stealth 脚本，降低自动化检测概率
+        if os.path.exists(_STEALTH_JS):
+            await context.add_init_script(path=_STEALTH_JS)
+
         page = await context.new_page()
 
         await page.goto(plat_conf["url"], wait_until="domcontentloaded", timeout=30000)
         await page.wait_for_timeout(3000)
+
+        # 抖音特殊处理：先弹出登录对话框
+        if platform == "dy":
+            try:
+                dialog = await page.wait_for_selector(
+                    "xpath=//div[@id='login-panel-new']", timeout=10000
+                )
+            except Exception:
+                # 对话框没有自动弹出，手动点击登录按钮
+                try:
+                    login_btn = page.locator("xpath=//p[text() = '登录']")
+                    await login_btn.click()
+                    await page.wait_for_timeout(2000)
+                except Exception:
+                    pass
+
+            # 尝试关闭可能出现的验证弹窗
+            try:
+                close_btn = await page.wait_for_selector(
+                    "xpath=//div[contains(@class,'captcha')]//span[contains(@class,'close')] | "
+                    "xpath=//div[contains(@id,'captcha')]//a[contains(@class,'close')]",
+                    timeout=3000,
+                )
+                if close_btn:
+                    await close_btn.click()
+                    await page.wait_for_timeout(1000)
+            except Exception:
+                pass
 
         # 部分平台需要先点击"扫码登录"切换到二维码模式
         pre_click = plat_conf.get("pre_click_selector")
