@@ -219,10 +219,8 @@ class BaiduTieBaClient(AbstractApiClient):
         note_type: SearchNoteType = SearchNoteType.FIXED_THREAD,
     ) -> List[TiebaNote]:
         """
-        根据关键词搜索贴吧帖子 (使用httpx直接请求，绕过浏览器指纹检测)
+        根据关键词搜索贴吧帖子 (使用requests直接请求，绕过浏览器指纹检测)
         """
-        import httpx
-
         search_url = f"{self._host}/f/search/res"
         params = {
             "ie": "utf-8",
@@ -233,7 +231,7 @@ class BaiduTieBaClient(AbstractApiClient):
             "only_thread": note_type.value,
         }
         full_url = f"{search_url}?{urlencode(params)}"
-        utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] httpx 搜索: {keyword}, page={page}")
+        utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] requests 搜索: {keyword}, page={page}")
 
         try:
             headers = {
@@ -244,10 +242,13 @@ class BaiduTieBaClient(AbstractApiClient):
                 "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             }
             utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] Cookie 长度: {len(headers['Cookie'])}, URL: {full_url}")
-            async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
-                resp = await client.get(full_url, headers=headers)
 
-            utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] httpx status={resp.status_code}, 长度={len(resp.text)}")
+            # 使用 requests (urllib3/OpenSSL TLS栈) 避免 httpx 的 TLS 指纹被百度拦截
+            resp = await asyncio.to_thread(
+                requests.get, full_url, headers=headers, timeout=30, allow_redirects=True
+            )
+
+            utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] status={resp.status_code}, 长度={len(resp.text)}")
 
             if resp.status_code != 200:
                 utils.logger.error(f"[BaiduTieBaClient.get_notes_by_keyword] HTTP {resp.status_code}")
