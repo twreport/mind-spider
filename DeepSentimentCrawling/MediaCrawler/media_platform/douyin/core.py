@@ -169,14 +169,23 @@ class DouYinCrawler(AbstractCrawler):
             try:
                 # Navigate to homepage first
                 await self.context_page.goto(self.index_url, wait_until="domcontentloaded", timeout=20000)
-                await asyncio.sleep(3)
+                await asyncio.sleep(5)
 
-                # Find and use the search box
-                search_input = await self.context_page.query_selector(
+                # Find and use the search box (wait for it to appear)
+                search_selectors = (
                     'input[data-e2e="searchbar-input"], input[placeholder*="搜索"], '
                     '#search-content-input, input[type="search"], '
                     'input[class*="search"], input[class*="Search"]'
                 )
+                search_input = None
+                try:
+                    search_input = await self.context_page.wait_for_selector(
+                        search_selectors, timeout=10000
+                    )
+                except Exception:
+                    # wait_for_selector timed out, try query_selector as fallback
+                    search_input = await self.context_page.query_selector(search_selectors)
+
                 if not search_input:
                     utils.logger.error("[DouYinCrawler.search] Could not find search input on homepage")
                     # Fallback to API search
