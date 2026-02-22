@@ -219,7 +219,7 @@ class BaiduTieBaClient(AbstractApiClient):
         note_type: SearchNoteType = SearchNoteType.FIXED_THREAD,
     ) -> List[TiebaNote]:
         """
-        根据关键词搜索贴吧帖子 (使用requests直接请求，绕过浏览器指纹检测)
+        根据关键词搜索贴吧帖子 (通过Playwright fetch绕过Python TLS指纹拦截)
         """
         search_url = f"{self._host}/f/search/res"
         params = {
@@ -231,30 +231,27 @@ class BaiduTieBaClient(AbstractApiClient):
             "only_thread": note_type.value,
         }
         full_url = f"{search_url}?{urlencode(params)}"
-        utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] requests 搜索: {keyword}, page={page}")
+        utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] fetch 搜索: {keyword}, page={page}")
 
         try:
-            headers = {
-                "User-Agent": self.headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"),
-                "Cookie": self.headers.get("Cookie", ""),
-                "Referer": "https://tieba.baidu.com/",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-            }
-            utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] Cookie 长度: {len(headers['Cookie'])}, URL: {full_url}")
+            if not self.playwright_page:
+                raise Exception("playwright_page is None, cannot use browser fetch")
 
-            # 使用 requests (urllib3/OpenSSL TLS栈) 避免 httpx 的 TLS 指纹被百度拦截
-            resp = await asyncio.to_thread(
-                requests.get, full_url, headers=headers, timeout=30, allow_redirects=True
-            )
+            # 通过浏览器内部 fetch() 发请求，复用 Chromium 的 BoringSSL TLS 栈
+            page_content = await self.playwright_page.evaluate("""
+                async (url) => {
+                    const resp = await fetch(url, {
+                        credentials: 'include',
+                        headers: {
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                        }
+                    });
+                    return await resp.text();
+                }
+            """, full_url)
 
-            utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] status={resp.status_code}, 长度={len(resp.text)}")
-
-            if resp.status_code != 200:
-                utils.logger.error(f"[BaiduTieBaClient.get_notes_by_keyword] HTTP {resp.status_code}")
-                return []
-
-            page_content = resp.text
+            utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] fetch 完成, 长度={len(page_content)}")
 
             # 检测是否为安全验证页
             if "百度安全验证" in page_content[:500]:
