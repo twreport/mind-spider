@@ -61,22 +61,22 @@ _PLATFORM_LOGIN = {
         "name": "哔哩哔哩",
     },
     "wb": {
-        "url": "https://weibo.com/login",
-        "pre_click_selector": "//div[contains(text(),'扫码登录')]",
-        "qr_selector": "xpath=//img[contains(@class,'qr')]",
+        "url": "https://passport.weibo.com/sso/signin?entry=miniblog&source=miniblog",
+        "qr_selector": "xpath=//img[@class='w-full h-full']",
         "session_key": "SSOLoginState",
         "name": "微博",
     },
     "ks": {
-        "url": "https://www.kuaishou.com",
+        "url": "https://www.kuaishou.com?isHome=1",
+        "login_click_selector": "xpath=//p[text()='登录']",
         "qr_selector": "//div[@class='qrcode-img']//img",
         "session_key": "passToken",
         "name": "快手",
     },
     "tieba": {
-        "url": "https://tieba.baidu.com",
-        "qr_selector": "//img[@id='QrcodeImg']",
-        "session_key": "BDUSS",
+        "url": "https://www.baidu.com/",
+        "qr_selector": "xpath=//img[@class='tang-pass-qrcode-img']",
+        "session_key": "STOKEN",
         "name": "贴吧",
     },
     "zhihu": {
@@ -333,6 +333,78 @@ async def get_qr(platform: str, token: str = Query("")):
             except Exception:
                 pass
 
+        # 快手特殊处理：首页点击"登录"按钮弹出登录框
+        elif platform == "ks":
+            try:
+                login_btn = page.locator("xpath=//p[text()='登录']")
+                await login_btn.click()
+                await page.wait_for_timeout(2000)
+                logger.info("[LoginConsole] ks 已点击登录按钮")
+            except Exception as e:
+                logger.warning(f"[LoginConsole] ks 点击登录按钮失败: {e}")
+
+        # 贴吧特殊处理：先访问 baidu.com，再跳转到贴吧（避免直接访问触发滑块验证）
+        elif platform == "tieba":
+            # 从百度首页点击"贴吧"链接跳转
+            tieba_clicked = False
+            tieba_selectors = [
+                'a[href="http://tieba.baidu.com/"]',
+                'a[href="https://tieba.baidu.com/"]',
+                'a.mnav:has-text("贴吧")',
+                'text=贴吧',
+            ]
+            for sel in tieba_selectors:
+                try:
+                    link = page.locator(sel).first
+                    if await link.count() > 0:
+                        # 检查是否在新标签打开
+                        target = await link.get_attribute("target")
+                        if target == "_blank":
+                            async with page.context.expect_page() as new_page_info:
+                                await link.click()
+                            new_page = await new_page_info.value
+                            await new_page.wait_for_load_state("domcontentloaded")
+                            await page.close()
+                            page = new_page
+                        else:
+                            await link.click()
+                            await page.wait_for_load_state("domcontentloaded")
+                        tieba_clicked = True
+                        logger.info(f"[LoginConsole] tieba 通过百度首页跳转成功 (selector: {sel})")
+                        break
+                except Exception:
+                    continue
+
+            if not tieba_clicked:
+                logger.warning("[LoginConsole] tieba 无法从百度首页跳转，直接访问 tieba.baidu.com")
+                await page.goto("https://tieba.baidu.com", wait_until="domcontentloaded", timeout=30000)
+
+            await page.wait_for_timeout(3000)
+
+            # 注入反检测脚本（贴吧额外需要）
+            try:
+                await page.evaluate("""() => {
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                    window.navigator.chrome = { runtime: {} };
+                }""")
+            except Exception:
+                pass
+
+            # 尝试点击登录按钮
+            try:
+                login_btn = page.locator("xpath=//li[@class='u_login']")
+                if await login_btn.count() > 0:
+                    await login_btn.click()
+                    await page.wait_for_timeout(2000)
+                    logger.info("[LoginConsole] tieba 已点击登录按钮")
+            except Exception as e:
+                logger.warning(f"[LoginConsole] tieba 点击登录按钮失败: {e}")
+
+        # 微博特殊处理：SSO 页面直接显示二维码，无需额外点击
+        elif platform == "wb":
+            # passport.weibo.com 的 SSO 页面直接展示二维码
+            logger.info("[LoginConsole] wb SSO 页面已加载，等待二维码显示")
+
         # 部分平台需要先点击"扫码登录"切换到二维码模式
         pre_click = plat_conf.get("pre_click_selector")
         if pre_click:
@@ -409,6 +481,12 @@ async def poll_login(platform: str, token: str = Query("")):
         if not logged_in and session_key in cookie_dict:
             logged_in = True
             logger.info(f"[LoginConsole] {platform} 检测到 session cookie: {session_key}")
+
+        # 贴吧额外检查：STOKEN 或 PTOKEN 任一出现即视为登录成功
+        if not logged_in and platform == "tieba":
+            if cookie_dict.get("PTOKEN") or cookie_dict.get("BDUSS"):
+                logged_in = True
+                logger.info(f"[LoginConsole] {platform} 检测到备选 cookie (PTOKEN/BDUSS)")
 
         if logged_in:
             # 抖音登录成功后刷新页面，等待 cookie 同步
