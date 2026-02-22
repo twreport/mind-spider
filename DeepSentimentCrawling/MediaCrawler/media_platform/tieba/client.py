@@ -243,7 +243,8 @@ class BaiduTieBaClient(AbstractApiClient):
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             }
-            async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
+            utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] Cookie 长度: {len(headers['Cookie'])}, URL: {full_url}")
+            async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
                 resp = await client.get(full_url, headers=headers)
 
             utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] httpx status={resp.status_code}, 长度={len(resp.text)}")
@@ -273,7 +274,9 @@ class BaiduTieBaClient(AbstractApiClient):
             return notes
 
         except Exception as e:
-            utils.logger.error(f"[BaiduTieBaClient.get_notes_by_keyword] 搜索失败: {e}")
+            utils.logger.error(f"[BaiduTieBaClient.get_notes_by_keyword] 搜索失败: {type(e).__name__}: {e!r}")
+            import traceback
+            utils.logger.error(f"[BaiduTieBaClient.get_notes_by_keyword] traceback: {traceback.format_exc()}")
             raise
 
     async def get_note_by_id(self, note_id: str) -> TiebaNote:
