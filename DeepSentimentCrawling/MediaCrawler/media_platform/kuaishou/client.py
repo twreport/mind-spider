@@ -54,6 +54,26 @@ class KuaiShouClient(AbstractApiClient):
         else:
             return data.get("data", {})
 
+    async def post_via_page(self, data: dict) -> Dict:
+        """通过 Playwright 页面发送 GraphQL 请求（继承浏览器完整的 cookie/session）"""
+        result = await self.playwright_page.evaluate("""
+            async (params) => {
+                const response = await fetch(params.url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json;charset=UTF-8',
+                    },
+                    body: JSON.stringify(params.data),
+                    credentials: 'include',
+                });
+                return await response.json();
+            }
+        """, {"url": self._host, "data": data})
+        if result.get("errors"):
+            utils.logger.error(f"[KuaiShouClient.post_via_page] GraphQL errors: {result.get('errors')}")
+            raise DataFetchError(result.get("errors", "unknown error"))
+        return result.get("data", {})
+
     async def get(self, uri: str, params=None) -> Dict:
         final_uri = uri
         if isinstance(params, dict):
@@ -131,7 +151,7 @@ class KuaiShouClient(AbstractApiClient):
         return await self.post("", post_data)
 
     async def get_video_comments(self, photo_id: str, pcursor: str = "") -> Dict:
-        """get video comments
+        """get video comments - 通过 Playwright 页面发送请求
         :param photo_id: photo id you want to fetch
         :param pcursor: last you get pcursor, defaults to ""
         :return:
@@ -141,12 +161,12 @@ class KuaiShouClient(AbstractApiClient):
             "variables": {"photoId": photo_id, "pcursor": pcursor},
             "query": self.graphql.get("comment_list"),
         }
-        return await self.post("", post_data)
+        return await self.post_via_page(post_data)
 
     async def get_video_sub_comments(
         self, photo_id: str, rootCommentId: str, pcursor: str = ""
     ) -> Dict:
-        """get video sub comments
+        """get video sub comments - 通过 Playwright 页面发送请求
         :param photo_id: photo id you want to fetch
         :param pcursor: last you get pcursor, defaults to ""
         :return:
@@ -160,7 +180,7 @@ class KuaiShouClient(AbstractApiClient):
             },
             "query": self.graphql.get("vision_sub_comment_list"),
         }
-        return await self.post("", post_data)
+        return await self.post_via_page(post_data)
 
     async def get_creator_profile(self, userId: str) -> Dict:
         post_data = {
@@ -206,6 +226,16 @@ class KuaiShouClient(AbstractApiClient):
             if not vision_commen_list:
                 utils.logger.warning(f"[KuaiShouClient.get_video_all_comments] photo_id={photo_id} visionCommentList 为空, 原始响应 keys: {list(comments_res.keys())}")
                 break
+            # 诊断日志：完整 visionCommentList 内容
+            comment_count = vision_commen_list.get("commentCount")
+            raw_root = vision_commen_list.get("rootComments")
+            utils.logger.info(
+                f"[KuaiShouClient.get_video_all_comments] photo_id={photo_id} "
+                f"commentCount={comment_count}, pcursor={vision_commen_list.get('pcursor')}, "
+                f"rootComments type={type(raw_root).__name__}, "
+                f"rootComments len={len(raw_root) if raw_root else 0}, "
+                f"全部keys={list(vision_commen_list.keys())}"
+            )
             pcursor = vision_commen_list.get("pcursor", "")
             comments = vision_commen_list.get("rootComments", [])
             utils.logger.info(f"[KuaiShouClient.get_video_all_comments] photo_id={photo_id} 获取到 {len(comments)} 条评论, pcursor={pcursor}")
