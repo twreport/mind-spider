@@ -49,6 +49,7 @@ class KuaiShouClient(AbstractApiClient):
             response = await client.request(method, url, timeout=self.timeout, **kwargs)
         data: Dict = response.json()
         if data.get("errors"):
+            utils.logger.error(f"[KuaiShouClient.request] GraphQL errors: {data.get('errors')}")
             raise DataFetchError(data.get("errors", "unkonw error"))
         else:
             return data.get("data", {})
@@ -198,9 +199,16 @@ class KuaiShouClient(AbstractApiClient):
 
         while pcursor != "no_more" and len(result) < max_count:
             comments_res = await self.get_video_comments(photo_id, pcursor)
+            if not comments_res:
+                utils.logger.warning(f"[KuaiShouClient.get_video_all_comments] photo_id={photo_id} 返回空响应")
+                break
             vision_commen_list = comments_res.get("visionCommentList", {})
+            if not vision_commen_list:
+                utils.logger.warning(f"[KuaiShouClient.get_video_all_comments] photo_id={photo_id} visionCommentList 为空, 原始响应 keys: {list(comments_res.keys())}")
+                break
             pcursor = vision_commen_list.get("pcursor", "")
             comments = vision_commen_list.get("rootComments", [])
+            utils.logger.info(f"[KuaiShouClient.get_video_all_comments] photo_id={photo_id} 获取到 {len(comments)} 条评论, pcursor={pcursor}")
             if not comments:
                 break
             if len(result) + len(comments) > max_count:
