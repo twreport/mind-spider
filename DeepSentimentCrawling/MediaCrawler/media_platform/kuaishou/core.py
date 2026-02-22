@@ -11,10 +11,7 @@
 
 import asyncio
 import os
-# import random  # Removed as we now use fixed config.CRAWLER_MAX_SLEEP_SEC intervals
-import time
-from asyncio import Task
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from playwright.async_api import (
     BrowserContext,
@@ -31,7 +28,7 @@ from proxy.proxy_ip_pool import IpInfoModel, create_ip_pool
 from store import kuaishou as kuaishou_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager
-from var import comment_tasks_var, crawler_type_var, source_keyword_var
+from var import crawler_type_var, source_keyword_var
 
 from .client import KuaiShouClient
 from .exception import DataFetchError
@@ -184,11 +181,6 @@ class KuaishouCrawler(AbstractCrawler):
                 await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
                 utils.logger.info(f"[KuaishouCrawler.search] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page-1}")
 
-                # 导航到第一个视频页面，建立评论 API 所需的 session
-                if video_id_list:
-                    await self.ks_client.prepare_comment_session(video_id_list[0])
-                    await self.ks_client.update_cookies(browser_context=self.browser_context)
-
                 await self.batch_get_video_comments(video_id_list)
 
     async def get_specified_videos(self):
@@ -244,7 +236,7 @@ class KuaishouCrawler(AbstractCrawler):
 
     async def batch_get_video_comments(self, video_id_list: List[str]):
         """
-        batch get video comments
+        batch get video comments (sequential - each video requires page navigation for DOM extraction)
         :param video_id_list:
         :return:
         """
@@ -257,58 +249,39 @@ class KuaishouCrawler(AbstractCrawler):
         utils.logger.info(
             f"[KuaishouCrawler.batch_get_video_comments] video ids:{video_id_list}"
         )
-        semaphore = asyncio.Semaphore(config.MAX_CONCURRENCY_NUM)
-        task_list: List[Task] = []
+        # 逐个处理，因为 DOM 提取需要逐个导航到视频页面
         for video_id in video_id_list:
-            task = asyncio.create_task(
-                self.get_comments(video_id, semaphore), name=video_id
-            )
-            task_list.append(task)
+            await self.get_comments(video_id)
 
-        comment_tasks_var.set(task_list)
-        await asyncio.gather(*task_list)
-
-    async def get_comments(self, video_id: str, semaphore: asyncio.Semaphore):
+    async def get_comments(self, video_id: str):
         """
-        get comment for video id
+        get comment for video id (DOM extraction, sequential)
         :param video_id:
-        :param semaphore:
         :return:
         """
-        async with semaphore:
-            try:
-                utils.logger.info(
-                    f"[KuaishouCrawler.get_comments] begin get video_id: {video_id} comments ..."
-                )
-                
-                # Sleep before fetching comments
-                await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
-                utils.logger.info(f"[KuaishouCrawler.get_comments] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds before fetching comments for video {video_id}")
-                
-                await self.ks_client.get_video_all_comments(
-                    photo_id=video_id,
-                    crawl_interval=config.CRAWLER_MAX_SLEEP_SEC,
-                    callback=kuaishou_store.batch_update_ks_video_comments,
-                    max_count=config.CRAWLER_MAX_COMMENTS_COUNT_SINGLENOTES,
-                )
-            except DataFetchError as ex:
-                utils.logger.error(
-                    f"[KuaishouCrawler.get_comments] get video_id: {video_id} comment error: {ex}"
-                )
-            except Exception as e:
-                utils.logger.error(
-                    f"[KuaishouCrawler.get_comments] may be been blocked, err:{e}"
-                )
-                # use time.sleeep block main coroutine instead of asyncio.sleep and cacel running comment task
-                # maybe kuaishou block our request, we will take a nap and update the cookie again
-                current_running_tasks = comment_tasks_var.get()
-                for task in current_running_tasks:
-                    task.cancel()
-                time.sleep(20)
-                await self.context_page.goto(f"{self.index_url}?isHome=1")
-                await self.ks_client.update_cookies(
-                    browser_context=self.browser_context
-                )
+        try:
+            utils.logger.info(
+                f"[KuaishouCrawler.get_comments] begin get video_id: {video_id} comments ..."
+            )
+
+            await self.ks_client.get_video_all_comments(
+                photo_id=video_id,
+                crawl_interval=config.CRAWLER_MAX_SLEEP_SEC,
+                callback=kuaishou_store.batch_update_ks_video_comments,
+                max_count=config.CRAWLER_MAX_COMMENTS_COUNT_SINGLENOTES,
+            )
+
+            # Sleep between videos
+            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+
+        except DataFetchError as ex:
+            utils.logger.error(
+                f"[KuaishouCrawler.get_comments] get video_id: {video_id} comment error: {ex}"
+            )
+        except Exception as e:
+            utils.logger.error(
+                f"[KuaishouCrawler.get_comments] video_id: {video_id} error: {e}"
+            )
 
     async def create_ks_client(self, httpx_proxy: Optional[str]) -> KuaiShouClient:
         """Create ks client"""

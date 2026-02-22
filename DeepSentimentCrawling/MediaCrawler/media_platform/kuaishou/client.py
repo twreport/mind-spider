@@ -11,7 +11,9 @@
 
 # -*- coding: utf-8 -*-
 import asyncio
+import hashlib
 import json
+import time
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlencode
 
@@ -24,6 +26,44 @@ from tools import utils
 
 from .exception import DataFetchError
 from .graphql import KuaiShouGraphQL
+
+# DOM 评论提取 JS（快手 GraphQL commentListQuery 已废弃，改用 SSR DOM 提取）
+EXTRACT_COMMENTS_JS = """
+() => {
+    const results = [];
+    const items = document.querySelectorAll('.comment-item.comment-list-item');
+    items.forEach((item, idx) => {
+        const authorEl = item.querySelector('.author-name');
+        const timeEl = item.querySelector('.comment-item-time');
+        const contentEl = item.querySelector('.comment-item-content');
+        const avatarEl = item.querySelector('.comment-item-portrait');
+        const profileEl = item.querySelector('.comment-item-author a[href], .router-link a[href]');
+
+        const author = authorEl ? authorEl.textContent.trim() : '';
+        const timeStr = timeEl ? timeEl.textContent.trim() : '';
+        const content = contentEl ? contentEl.textContent.trim() : '';
+        const avatar = avatarEl ? (avatarEl.getAttribute('src') || '') : '';
+        const profileHref = profileEl ? (profileEl.getAttribute('href') || '') : '';
+
+        // 提取 authorId: 从 profile 链接 /profile/xxx 中提取
+        let authorId = '';
+        if (profileHref) {
+            const m = profileHref.match(/\\/profile\\/([\\w]+)/);
+            if (m) authorId = m[1];
+        }
+
+        results.push({
+            author: author,
+            authorId: authorId,
+            time: timeStr,
+            content: content,
+            avatar: avatar,
+            index: idx,
+        });
+    });
+    return results;
+}
+"""
 
 
 class KuaiShouClient(AbstractApiClient):
@@ -53,39 +93,6 @@ class KuaiShouClient(AbstractApiClient):
             raise DataFetchError(data.get("errors", "unkonw error"))
         else:
             return data.get("data", {})
-
-    async def post_via_page(self, data: dict) -> Dict:
-        """通过 Playwright 页面发送 GraphQL 请求（继承浏览器完整的 cookie/session）"""
-        result = await self.playwright_page.evaluate("""
-            async (params) => {
-                const response = await fetch(params.url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json;charset=UTF-8',
-                    },
-                    body: JSON.stringify(params.data),
-                    credentials: 'include',
-                });
-                return await response.json();
-            }
-        """, {"url": self._host, "data": data})
-        if result.get("errors"):
-            utils.logger.error(f"[KuaiShouClient.post_via_page] GraphQL errors: {result.get('errors')}")
-            raise DataFetchError(result.get("errors", "unknown error"))
-        return result.get("data", {})
-
-    async def prepare_comment_session(self, photo_id: str):
-        """导航到视频页面，让 JS 设置评论 API 所需的 cookie/token"""
-        video_url = f"https://www.kuaishou.com/short-video/{photo_id}"
-        try:
-            utils.logger.info(f"[KuaiShouClient.prepare_comment_session] 导航到视频页: {video_url}")
-            await self.playwright_page.goto(video_url, wait_until="domcontentloaded", timeout=15000)
-            await asyncio.sleep(3)  # 等待 JS 执行完毕，设置 cookie/token
-            utils.logger.info(
-                f"[KuaiShouClient.prepare_comment_session] 页面加载完成, URL: {self.playwright_page.url}"
-            )
-        except Exception as e:
-            utils.logger.warning(f"[KuaiShouClient.prepare_comment_session] 导航失败: {e}")
 
     async def get(self, uri: str, params=None) -> Dict:
         final_uri = uri
@@ -163,37 +170,94 @@ class KuaiShouClient(AbstractApiClient):
         }
         return await self.post("", post_data)
 
-    async def get_video_comments(self, photo_id: str, pcursor: str = "") -> Dict:
-        """get video comments - 通过 Playwright 页面发送请求
-        :param photo_id: photo id you want to fetch
-        :param pcursor: last you get pcursor, defaults to ""
-        :return:
-        """
-        post_data = {
-            "operationName": "commentListQuery",
-            "variables": {"photoId": photo_id, "pcursor": pcursor},
-            "query": self.graphql.get("comment_list"),
-        }
-        return await self.post_via_page(post_data)
+    async def get_video_comments_from_dom(self, photo_id: str) -> List[Dict]:
+        """从视频页 DOM 提取评论（GraphQL commentListQuery 已废弃）
 
-    async def get_video_sub_comments(
-        self, photo_id: str, rootCommentId: str, pcursor: str = ""
-    ) -> Dict:
-        """get video sub comments - 通过 Playwright 页面发送请求
-        :param photo_id: photo id you want to fetch
-        :param pcursor: last you get pcursor, defaults to ""
+        导航到视频页面，等待评论区渲染，通过 CSS 选择器提取评论数据。
+        返回格式与原 GraphQL 接口兼容。
+        """
+        video_url = f"https://www.kuaishou.com/short-video/{photo_id}"
+        try:
+            utils.logger.info(
+                f"[KuaiShouClient.get_video_comments_from_dom] 导航到 {video_url}"
+            )
+            await self.playwright_page.goto(
+                video_url, wait_until="domcontentloaded", timeout=15000
+            )
+            await asyncio.sleep(4)  # 等待评论区 SSR 渲染完成
+
+            # 滚动到评论区以确保渲染
+            await self.playwright_page.evaluate(
+                "window.scrollTo(0, document.body.scrollHeight / 3)"
+            )
+            await asyncio.sleep(1)
+
+            raw_comments = await self.playwright_page.evaluate(EXTRACT_COMMENTS_JS)
+
+            # 转换为与 GraphQL 接口兼容的格式
+            comments = []
+            for raw in raw_comments:
+                # 生成稳定的 commentId: 基于 video_id + author + content 的 hash
+                id_src = f"{photo_id}_{raw['author']}_{raw['content']}_{raw['index']}"
+                comment_id = hashlib.md5(id_src.encode()).hexdigest()[:16]
+
+                comments.append({
+                    "commentId": comment_id,
+                    "authorId": raw.get("authorId", ""),
+                    "authorName": raw.get("author", ""),
+                    "content": raw.get("content", ""),
+                    "headurl": raw.get("avatar", ""),
+                    "timestamp": int(time.time()),  # DOM 中只有相对时间，用当前时间戳
+                    "likedCount": 0,
+                    "realLikedCount": 0,
+                    "liked": False,
+                    "status": 1,
+                    "authorLiked": False,
+                    "subCommentCount": 0,
+                    "subCommentsPcursor": "no_more",
+                    "subComments": [],
+                })
+
+            utils.logger.info(
+                f"[KuaiShouClient.get_video_comments_from_dom] "
+                f"photo_id={photo_id} 从 DOM 提取到 {len(comments)} 条评论"
+            )
+            return comments
+
+        except Exception as e:
+            utils.logger.error(
+                f"[KuaiShouClient.get_video_comments_from_dom] "
+                f"photo_id={photo_id} 提取失败: {e}"
+            )
+            return []
+
+    async def get_video_all_comments(
+        self,
+        photo_id: str,
+        crawl_interval: float = 1.0,
+        callback: Optional[Callable] = None,
+        max_count: int = 10,
+    ):
+        """
+        获取视频所有评论（通过 DOM 提取，GraphQL 接口已废弃）
+        :param photo_id:
+        :param crawl_interval:
+        :param callback:
+        :param max_count:
         :return:
         """
-        post_data = {
-            "operationName": "visionSubCommentList",
-            "variables": {
-                "photoId": photo_id,
-                "pcursor": pcursor,
-                "rootCommentId": rootCommentId,
-            },
-            "query": self.graphql.get("vision_sub_comment_list"),
-        }
-        return await self.post_via_page(post_data)
+        comments = await self.get_video_comments_from_dom(photo_id)
+        if not comments:
+            return []
+
+        # 限制数量
+        if len(comments) > max_count:
+            comments = comments[:max_count]
+
+        if callback:
+            await callback(photo_id, comments)
+
+        return comments
 
     async def get_creator_profile(self, userId: str) -> Dict:
         post_data = {
@@ -210,111 +274,6 @@ class KuaiShouClient(AbstractApiClient):
             "query": self.graphql.get("vision_profile_photo_list"),
         }
         return await self.post("", post_data)
-
-    async def get_video_all_comments(
-        self,
-        photo_id: str,
-        crawl_interval: float = 1.0,
-        callback: Optional[Callable] = None,
-        max_count: int = 10,
-    ):
-        """
-        get video all comments include sub comments
-        :param photo_id:
-        :param crawl_interval:
-        :param callback:
-        :param max_count:
-        :return:
-        """
-
-        result = []
-        pcursor = ""
-
-        while pcursor != "no_more" and len(result) < max_count:
-            comments_res = await self.get_video_comments(photo_id, pcursor)
-            if not comments_res:
-                utils.logger.warning(f"[KuaiShouClient.get_video_all_comments] photo_id={photo_id} 返回空响应")
-                break
-            vision_commen_list = comments_res.get("visionCommentList", {})
-            if not vision_commen_list:
-                utils.logger.warning(f"[KuaiShouClient.get_video_all_comments] photo_id={photo_id} visionCommentList 为空, 原始响应 keys: {list(comments_res.keys())}")
-                break
-            # 诊断日志：完整 visionCommentList 内容
-            comment_count = vision_commen_list.get("commentCount")
-            raw_root = vision_commen_list.get("rootComments")
-            utils.logger.info(
-                f"[KuaiShouClient.get_video_all_comments] photo_id={photo_id} "
-                f"commentCount={comment_count}, pcursor={vision_commen_list.get('pcursor')}, "
-                f"rootComments type={type(raw_root).__name__}, "
-                f"rootComments len={len(raw_root) if raw_root else 0}, "
-                f"全部keys={list(vision_commen_list.keys())}"
-            )
-            pcursor = vision_commen_list.get("pcursor", "")
-            comments = vision_commen_list.get("rootComments", [])
-            utils.logger.info(f"[KuaiShouClient.get_video_all_comments] photo_id={photo_id} 获取到 {len(comments)} 条评论, pcursor={pcursor}")
-            if not comments:
-                break
-            if len(result) + len(comments) > max_count:
-                comments = comments[: max_count - len(result)]
-            if callback:  # 如果有回调函数，就执行回调函数
-                await callback(photo_id, comments)
-            result.extend(comments)
-            await asyncio.sleep(crawl_interval)
-            sub_comments = await self.get_comments_all_sub_comments(
-                comments, photo_id, crawl_interval, callback
-            )
-            result.extend(sub_comments)
-        return result
-
-    async def get_comments_all_sub_comments(
-        self,
-        comments: List[Dict],
-        photo_id,
-        crawl_interval: float = 1.0,
-        callback: Optional[Callable] = None,
-    ) -> List[Dict]:
-        """
-        获取指定一级评论下的所有二级评论, 该方法会一直查找一级评论下的所有二级评论信息
-        Args:
-            comments: 评论列表
-            photo_id: 视频id
-            crawl_interval: 爬取一次评论的延迟单位（秒）
-            callback: 一次评论爬取结束后
-        Returns:
-
-        """
-        if not config.ENABLE_GET_SUB_COMMENTS:
-            utils.logger.info(
-                f"[KuaiShouClient.get_comments_all_sub_comments] Crawling sub_comment mode is not enabled"
-            )
-            return []
-
-        result = []
-        for comment in comments:
-            sub_comments = comment.get("subComments")
-            if sub_comments and callback:
-                await callback(photo_id, sub_comments)
-
-            sub_comment_pcursor = comment.get("subCommentsPcursor")
-            if sub_comment_pcursor == "no_more":
-                continue
-
-            root_comment_id = comment.get("commentId")
-            sub_comment_pcursor = ""
-
-            while sub_comment_pcursor != "no_more":
-                comments_res = await self.get_video_sub_comments(
-                    photo_id, root_comment_id, sub_comment_pcursor
-                )
-                vision_sub_comment_list = comments_res.get("visionSubCommentList", {})
-                sub_comment_pcursor = vision_sub_comment_list.get("pcursor", "no_more")
-
-                comments = vision_sub_comment_list.get("subComments", {})
-                if callback:
-                    await callback(photo_id, comments)
-                await asyncio.sleep(crawl_interval)
-                result.extend(comments)
-        return result
 
     async def get_creator_info(self, user_id: str) -> Dict:
         """
