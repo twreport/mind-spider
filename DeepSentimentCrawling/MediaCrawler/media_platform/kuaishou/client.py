@@ -41,9 +41,32 @@ EXTRACT_COMMENTS_JS = """
 
         const author = authorEl ? authorEl.textContent.trim() : '';
         const timeStr = timeEl ? timeEl.textContent.trim() : '';
-        const content = contentEl ? contentEl.textContent.trim() : '';
         const avatar = avatarEl ? (avatarEl.getAttribute('src') || '') : '';
         const profileHref = profileEl ? (profileEl.getAttribute('href') || '') : '';
+
+        // 提取评论内容: textContent + emoji img alt 文本
+        let content = '';
+        if (contentEl) {
+            const parts = [];
+            contentEl.childNodes.forEach(function walk(node) {
+                if (node.nodeType === 3) {
+                    // 文本节点
+                    const t = node.textContent.trim();
+                    if (t) parts.push(t);
+                } else if (node.nodeName === 'IMG') {
+                    // emoji 图片 - 取 alt 属性
+                    const alt = node.getAttribute('alt');
+                    if (alt) parts.push(alt);
+                } else if (node.childNodes) {
+                    node.childNodes.forEach(walk);
+                }
+            });
+            content = parts.join('');
+            // 如果上面没提取到，回退到 textContent
+            if (!content) {
+                content = contentEl.textContent.trim();
+            }
+        }
 
         // 提取 authorId: 从 profile 链接 /profile/xxx 中提取
         let authorId = '';
@@ -197,12 +220,12 @@ class KuaiShouClient(AbstractApiClient):
             # 转换为与 GraphQL 接口兼容的格式
             comments = []
             for raw in raw_comments:
-                # 生成稳定的 commentId: 基于 video_id + author + content 的 hash
+                # 生成稳定的数字 commentId（BigInteger 兼容）
                 id_src = f"{photo_id}_{raw['author']}_{raw['content']}_{raw['index']}"
-                comment_id = hashlib.md5(id_src.encode()).hexdigest()[:16]
+                comment_id = int(hashlib.md5(id_src.encode()).hexdigest()[:15], 16)
 
                 comments.append({
-                    "commentId": comment_id,
+                    "commentId": str(comment_id),
                     "authorId": raw.get("authorId", ""),
                     "authorName": raw.get("author", ""),
                     "content": raw.get("content", ""),
