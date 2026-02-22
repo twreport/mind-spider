@@ -34,6 +34,8 @@ from tools import utils
 from tools.cdp_browser import CDPBrowserManager
 from var import crawler_type_var, source_keyword_var
 
+from tenacity import RetryError
+
 from .client import ZhiHuClient
 from .exception import DataFetchError
 from .help import ZhihuExtractor, judge_zhihu_url
@@ -179,8 +181,8 @@ class ZhihuCrawler(AbstractCrawler):
                         await zhihu_store.update_zhihu_content(content)
 
                     await self.batch_get_content_comments(content_list)
-                except DataFetchError:
-                    utils.logger.error("[ZhihuCrawler.search] Search content error")
+                except (DataFetchError, RetryError) as e:
+                    utils.logger.error(f"[ZhihuCrawler.search] Search content error: {e}")
                     return
 
     async def batch_get_content_comments(self, content_list: List[ZhihuContent]):
@@ -205,7 +207,13 @@ class ZhihuCrawler(AbstractCrawler):
                 self.get_comments(content_item, semaphore), name=content_item.content_id
             )
             task_list.append(task)
-        await asyncio.gather(*task_list)
+        results = await asyncio.gather(*task_list, return_exceptions=True)
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                utils.logger.error(
+                    f"[ZhihuCrawler.batch_get_content_comments] "
+                    f"Failed to get comments for content {content_list[i].content_id}: {result}"
+                )
 
     async def get_comments(
         self, content_item: ZhihuContent, semaphore: asyncio.Semaphore

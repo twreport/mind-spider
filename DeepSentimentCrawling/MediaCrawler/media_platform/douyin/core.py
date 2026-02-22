@@ -78,6 +78,17 @@ class DouYinCrawler(AbstractCrawler):
                 await self.browser_context.add_init_script(path=os.path.join(config.LIBS_DIR, "stealth.min.js"))
 
             self.context_page = await self.browser_context.new_page()
+
+            # 在导航前注入 cookie，确保页面以已登录状态加载
+            if config.LOGIN_TYPE == "cookie" and config.COOKIES:
+                for key, value in utils.convert_str_cookie_to_dict(config.COOKIES).items():
+                    await self.browser_context.add_cookies([{
+                        'name': key,
+                        'value': value,
+                        'domain': ".douyin.com",
+                        'path': "/"
+                    }])
+
             await self.context_page.goto(self.index_url)
 
             self.dy_client = await self.create_douyin_client(httpx_proxy_format)
