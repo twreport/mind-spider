@@ -219,16 +219,23 @@ class KuaiShouClient(AbstractApiClient):
 
             # 转换为与 GraphQL 接口兼容的格式
             comments = []
+            skipped = 0
             for raw in raw_comments:
+                content = raw.get("content", "").strip()
+                # 跳过无文字或过短的评论（纯表情、"666"等分析价值低）
+                if len(content) < 4:
+                    skipped += 1
+                    continue
+
                 # 生成稳定的数字 commentId（BigInteger 兼容）
-                id_src = f"{photo_id}_{raw['author']}_{raw['content']}_{raw['index']}"
+                id_src = f"{photo_id}_{raw['author']}_{content}_{raw['index']}"
                 comment_id = int(hashlib.md5(id_src.encode()).hexdigest()[:15], 16)
 
                 comments.append({
                     "commentId": str(comment_id),
                     "authorId": raw.get("authorId", ""),
                     "authorName": raw.get("author", ""),
-                    "content": raw.get("content", ""),
+                    "content": content,
                     "headurl": raw.get("avatar", ""),
                     "timestamp": int(time.time()),  # DOM 中只有相对时间，用当前时间戳
                     "likedCount": 0,
@@ -243,7 +250,8 @@ class KuaiShouClient(AbstractApiClient):
 
             utils.logger.info(
                 f"[KuaiShouClient.get_video_comments_from_dom] "
-                f"photo_id={photo_id} 从 DOM 提取到 {len(comments)} 条评论"
+                f"photo_id={photo_id} 从 DOM 提取到 {len(comments)} 条有效评论, "
+                f"跳过 {skipped} 条过短评论"
             )
             return comments
 
