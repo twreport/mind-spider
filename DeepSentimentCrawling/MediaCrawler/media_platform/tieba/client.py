@@ -263,6 +263,15 @@ class BaiduTieBaClient(AbstractApiClient):
             # 提取搜索结果
             notes = self._page_extractor.extract_search_note_list(page_content)
             utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] 提取到 {len(notes)} 条帖子")
+
+            # DEBUG: 提取为0时保存HTML供分析
+            if not notes:
+                import os, config as _cfg
+                debug_path = os.path.join(getattr(_cfg, 'PROJECT_ROOT', '.'), "debug_tieba_search.html")
+                with open(debug_path, "w", encoding="utf-8") as f:
+                    f.write(page_content)
+                utils.logger.warning(f"[BaiduTieBaClient] 提取0条结果，HTML已保存到 {debug_path}")
+
             return notes
 
         except Exception as e:
