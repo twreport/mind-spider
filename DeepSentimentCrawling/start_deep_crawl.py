@@ -28,7 +28,7 @@ if _PROJECT_ROOT not in sys.path:
 from ms_config import settings
 from DeepSentimentCrawling.cookie_manager import CookieManager
 from DeepSentimentCrawling.dispatcher import TaskDispatcher
-from DeepSentimentCrawling.login_console import app as login_app, init_cookie_manager, cleanup as console_cleanup
+from DeepSentimentCrawling.login_console import app as login_app, init_cookie_manager, init_mongo_writer, cleanup as console_cleanup
 
 
 def parse_args():
@@ -77,6 +77,8 @@ async def main():
         cookie_manager=cookie_manager,
         dry_run=args.dry_run,
     )
+
+    init_mongo_writer(dispatcher.mongo)
 
     # 启动登录控制台（后台线程）
     console_thread = threading.Thread(

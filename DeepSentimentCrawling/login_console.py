@@ -8,8 +8,10 @@ LoginConsole — FastAPI 远程登录控制台
 
 import asyncio
 import base64
+import json
 import os
 import time
+import uuid
 from typing import Optional
 
 from fastapi import FastAPI, Query, HTTPException, Request
@@ -44,8 +46,11 @@ _STEALTH_JS = os.path.join(
 
 # 全局状态
 _cookie_manager: Optional[CookieManager] = None
+_mongo = None
 _browser: Optional[Browser] = None
 _active_sessions: dict[str, dict] = {}  # platform -> session info
+
+_VALID_PLATFORMS = {"xhs", "dy", "bili", "wb", "ks", "tieba", "zhihu"}
 
 # 平台登录配置
 _PLATFORM_LOGIN = {
@@ -110,6 +115,12 @@ def init_cookie_manager(cm: CookieManager):
     """注入 CookieManager 实例"""
     global _cookie_manager
     _cookie_manager = cm
+
+
+def init_mongo_writer(m):
+    """注入 MongoWriter 实例（供 /api/tasks 端点使用）"""
+    global _mongo
+    _mongo = m
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -821,6 +832,89 @@ async def poll_login(platform: str, token: str = Query("")):
     except Exception as e:
         logger.error(f"[LoginConsole] {platform} 轮询异常: {e}")
         return JSONResponse({"status": "error", "message": str(e)})
+
+
+@app.post("/api/tasks")
+async def create_task(request: Request, token: str = Query("")):
+    """用户发起深层爬取任务：写 MongoDB + 推 Redis"""
+    _check_token(token)
+
+    if not _mongo:
+        raise HTTPException(status_code=500, detail="MongoWriter 未初始化")
+
+    body = await request.json()
+    platform = body.get("platform", "").strip()
+    search_keywords = body.get("search_keywords")
+    max_notes = body.get("max_notes", 50)
+
+    # 校验 platform
+    if not platform or platform not in _VALID_PLATFORMS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"platform 必须是 {sorted(_VALID_PLATFORMS)} 之一",
+        )
+
+    # 校验 search_keywords
+    if not search_keywords or not isinstance(search_keywords, list) or len(search_keywords) == 0:
+        raise HTTPException(status_code=400, detail="search_keywords 必须是非空数组")
+
+    # 生成 task_id
+    ts = int(time.time())
+    short_uuid = uuid.uuid4().hex[:8]
+    task_id = f"ut_{platform}_{short_uuid}_{ts}"
+
+    task_doc = {
+        "task_id": task_id,
+        "candidate_id": "user_api",
+        "topic_title": body.get("topic_title", search_keywords[0]),
+        "platform": platform,
+        "search_keywords": search_keywords,
+        "max_notes": max_notes,
+        "priority": 100,
+        "status": "pending",
+        "created_at": ts,
+        "attempts": 0,
+        "_source": "user",
+    }
+
+    # 写 MongoDB（状态跟踪）
+    try:
+        _mongo.connect()
+        col = _mongo.get_collection("crawl_tasks")
+        col.insert_one(task_doc.copy())
+    except Exception as e:
+        logger.error(f"[API] MongoDB 写入失败: {e}")
+        raise HTTPException(status_code=500, detail=f"MongoDB 写入失败: {e}")
+
+    # 推 Redis
+    try:
+        from DeepSentimentCrawling.task_queue import get_task_queue
+        queue = get_task_queue()
+        queue.push_user_task(task_doc)
+    except Exception as e:
+        logger.warning(f"[API] Redis 推送失败（MongoDB 已写入）: {e}")
+
+    logger.info(f"[API] 用户任务已创建: {task_id} platform={platform} keywords={search_keywords}")
+    return JSONResponse({"task_id": task_id, "status": "ok"})
+
+
+@app.get("/api/tasks/{task_id}")
+async def get_task(task_id: str, token: str = Query("")):
+    """查询任务状态"""
+    _check_token(token)
+
+    if not _mongo:
+        raise HTTPException(status_code=500, detail="MongoWriter 未初始化")
+
+    _mongo.connect()
+    col = _mongo.get_collection("crawl_tasks")
+    doc = col.find_one({"task_id": task_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+
+    # 确保所有值可序列化（如 ObjectId、datetime 等）
+    content = json.loads(json.dumps(doc, ensure_ascii=False, default=str))
+    return JSONResponse(content)
 
 
 async def cleanup():
