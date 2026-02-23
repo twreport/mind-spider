@@ -278,7 +278,7 @@ class BilibiliClient(AbstractApiClient):
                 utils.logger.warning(f"[BilibiliClient.get_video_all_comments] Could not find 'cursor' in response for video_id: {video_id}. Skipping.")
                 break
 
-            comment_list: List[Dict] = comments_res.get("replies", [])
+            comment_list: List[Dict] = comments_res.get("replies") or []
 
             # 检查 is_end 和 next 是否存在
             if "is_end" not in cursor_info or "next" not in cursor_info:

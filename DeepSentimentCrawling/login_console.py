@@ -847,7 +847,7 @@ async def create_task(request: Request, token: str = Query("")):
     except Exception:
         raise HTTPException(status_code=400, detail="请求体必须是合法的 JSON")
     topic_title = (body.get("topic_title") or "").strip()
-    platform = (body.get("platform") or "").strip()
+    platforms_input = body.get("platforms")
     search_keywords = body.get("search_keywords")
     max_notes = body.get("max_notes", 50)
 
@@ -855,14 +855,17 @@ async def create_task(request: Request, token: str = Query("")):
     if not topic_title:
         raise HTTPException(status_code=400, detail="topic_title 为必填项")
 
-    # platform: 传了就校验，没传则全平台
-    if platform:
-        if platform not in _VALID_PLATFORMS:
+    # platforms: 传了就逐个校验，没传则全平台
+    if platforms_input:
+        if not isinstance(platforms_input, list) or len(platforms_input) == 0:
+            raise HTTPException(status_code=400, detail="platforms 必须是非空数组")
+        invalid = [p for p in platforms_input if p not in _VALID_PLATFORMS]
+        if invalid:
             raise HTTPException(
                 status_code=400,
-                detail=f"platform 必须是 {sorted(_VALID_PLATFORMS)} 之一",
+                detail=f"不支持的平台: {invalid}，可选值: {sorted(_VALID_PLATFORMS)}",
             )
-        platforms = [platform]
+        platforms = platforms_input
     else:
         platforms = sorted(_VALID_PLATFORMS)
 
