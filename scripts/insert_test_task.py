@@ -20,7 +20,7 @@ TOPIC = "中国短道速滑历史最差"
 KEYWORDS = ["中国短道速滑历史最差", "短道速滑"]
 
 # 所有平台
-PLATFORMS = ["dy"]
+PLATFORMS = ["xhs"]
 
 ts = int(time.time())
 inserted = 0
