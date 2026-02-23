@@ -47,6 +47,7 @@ class TaskDispatcher:
     CIRCUIT_RESET_SEC = 1800  # 熔断恢复时间（30 分钟）
     MAX_ATTEMPTS = 3          # 单任务最大重试次数
     RETRY_BACKOFF = [120, 240, 480]  # 重试退避（秒）
+    HEALTH_CHECK_INTERVAL = 30  # 每 30 轮执行一次 cookie 健康检查（≈5 分钟）
 
     def __init__(
         self,
@@ -68,6 +69,7 @@ class TaskDispatcher:
         self.circuit_open_until: dict[str, float] = {}
 
         self._running = False
+        self._health_check_counter = 0
 
         for plat in self.platforms:
             self.workers[plat] = PlatformWorker(cookie_manager=self.cookie_manager)
@@ -366,6 +368,20 @@ class TaskDispatcher:
             if self.failure_counts[platform] >= self.CIRCUIT_THRESHOLD:
                 self._trip_circuit(platform, f"连续 {self.CIRCUIT_THRESHOLD} 次失败")
 
+    # ==================== Cookie 健康检查 ====================
+
+    async def _cookie_health_check(self):
+        """定时巡检所有平台 cookie 健康状态"""
+        for platform in self.platforms:
+            cookies = await asyncio.to_thread(self.cookie_manager.load_cookies, platform)
+            if not cookies:
+                continue  # 没 cookie 的平台跳过（已是 missing/expired）
+
+            healthy = await asyncio.to_thread(self.cookie_manager.check_health, platform)
+            if not healthy:
+                logger.warning(f"[Dispatcher] 健康检查失败: {platform} cookie 可能已过期")
+                await asyncio.to_thread(self.cookie_manager.mark_expired, platform)
+
     # ==================== 调度循环 ====================
 
     async def _dispatch_round(self):
@@ -443,6 +459,11 @@ class TaskDispatcher:
 
         while self._running:
             try:
+                self._health_check_counter += 1
+                if self._health_check_counter >= self.HEALTH_CHECK_INTERVAL:
+                    self._health_check_counter = 0
+                    await self._cookie_health_check()
+
                 await self._dispatch_round()
             except Exception as e:
                 logger.error(f"[Dispatcher] 调度轮次异常: {e}")

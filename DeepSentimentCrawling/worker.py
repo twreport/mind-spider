@@ -97,6 +97,7 @@ class PlatformWorker:
             mc_config.COOKIES = CookieManager.format_cookies_for_config(cookies)
             mc_config.HEADLESS = True
             mc_config.ENABLE_CDP_MODE = False
+            mc_config.SAVE_LOGIN_STATE = False
             mc_config.ENABLE_GET_COMMENTS = True
             mc_config.CRAWLER_TYPE = "search"
             mc_config.ENABLE_GET_MEIDAS = False
