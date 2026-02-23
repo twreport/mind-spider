@@ -249,7 +249,8 @@ class WeiboCrawler(AbstractCrawler):
             except DataFetchError as ex:
                 utils.logger.error(f"[WeiboCrawler.get_note_comments] get note_id: {note_id} comment error: {ex}")
             except Exception as e:
-                utils.logger.error(f"[WeiboCrawler.get_note_comments] may be been blocked, err:{e}")
+                import traceback
+                utils.logger.error(f"[WeiboCrawler.get_note_comments] may be been blocked, err:{e}\n{traceback.format_exc()}")
 
     async def get_note_images(self, mblog: Dict):
         """

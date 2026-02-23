@@ -7,6 +7,7 @@ PlatformWorker — 在进程内调用 MediaCrawler 执行单个爬取任务
 """
 
 import sys
+import traceback
 from pathlib import Path
 from typing import Optional
 
@@ -124,7 +125,7 @@ class PlatformWorker:
 
         except Exception as e:
             error_msg = f"{type(e).__name__}: {e}"
-            logger.error(f"[Worker] 任务 {task_id} 执行失败: {error_msg}")
+            logger.error(f"[Worker] 任务 {task_id} 执行失败: {error_msg}\n{traceback.format_exc()}")
 
             # 检查是否为 cookie 过期相关错误（只检查错误前 200 字符，避免 Chrome 启动参数误匹配）
             short_err = error_msg[:200].lower()

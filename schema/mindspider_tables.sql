@@ -82,7 +82,7 @@ DROP TABLE IF EXISTS `crawling_tasks`;
 CREATE TABLE `crawling_tasks` (
     `id` int NOT NULL AUTO_INCREMENT COMMENT '自增ID',
     `task_id` varchar(64) NOT NULL COMMENT '任务唯一ID',
-    `topic_id` varchar(64) NOT NULL COMMENT '关联的候选话题ID(candidate_id)',
+    `topic_id` varchar(64) DEFAULT NULL COMMENT '关联的候选话题ID(candidate_id)，用户任务为NULL',
     `platform` varchar(32) NOT NULL COMMENT '目标平台(xhs|dy|ks|bili|wb|tieba|zhihu)',
     `search_keywords` text NOT NULL COMMENT '搜索关键词(JSON格式存储)',
     `task_status` varchar(16) DEFAULT 'pending' COMMENT '任务状态(pending|running|completed|failed|paused)',

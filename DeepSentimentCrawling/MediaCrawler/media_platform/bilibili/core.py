@@ -351,7 +351,8 @@ class BilibiliCrawler(AbstractCrawler):
             except DataFetchError as ex:
                 utils.logger.error(f"[BilibiliCrawler.get_comments] get video_id: {video_id} comment error: {ex}")
             except Exception as e:
-                utils.logger.error(f"[BilibiliCrawler.get_comments] may be been blocked, err:{e}")
+                import traceback
+                utils.logger.error(f"[BilibiliCrawler.get_comments] may be been blocked, err:{e}\n{traceback.format_exc()}")
                 # Propagate the exception to be caught by the main loop
                 raise
 

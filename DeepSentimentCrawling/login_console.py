@@ -842,7 +842,10 @@ async def create_task(request: Request, token: str = Query("")):
     if not _mongo:
         raise HTTPException(status_code=500, detail="MongoWriter 未初始化")
 
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="请求体必须是合法的 JSON")
     topic_title = (body.get("topic_title") or "").strip()
     platform = (body.get("platform") or "").strip()
     search_keywords = body.get("search_keywords")

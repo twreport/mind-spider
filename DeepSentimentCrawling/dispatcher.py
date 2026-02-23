@@ -278,7 +278,7 @@ class TaskDispatcher:
                     ON DUPLICATE KEY UPDATE last_modify_ts = :last_modify_ts
                 """), {
                     "task_id": task["task_id"],
-                    "topic_id": task.get("candidate_id", ""),
+                    "topic_id": None if task.get("candidate_id", "").startswith("user") else task.get("candidate_id", ""),
                     "platform": task["platform"],
                     "search_keywords": json.dumps(
                         task.get("search_keywords", []), ensure_ascii=False
