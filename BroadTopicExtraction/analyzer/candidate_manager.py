@@ -21,7 +21,6 @@ from urllib.parse import quote_plus
 import yaml
 from loguru import logger
 from pymongo import UpdateOne
-from sqlalchemy import create_engine, text
 
 from BroadTopicExtraction.analyzer.signal_detector import _extract_keywords
 from BroadTopicExtraction.pipeline.mongo_writer import MongoWriter
@@ -118,7 +117,6 @@ class CandidateManager:
             db_name=settings.MONGO_SIGNAL_DB_NAME
         )
         self.thresholds = {**DEFAULT_CANDIDATE_THRESHOLDS, **(thresholds or {})}
-        self._mysql_engine = None
 
     def ensure_indexes(self) -> None:
         """创建 candidates collection 索引"""
@@ -367,7 +365,7 @@ class CandidateManager:
             self._emit_crawl_tasks(candidate, new_status, now)
 
     def _emit_crawl_tasks(self, candidate: dict, status: str, now: int) -> None:
-        """根据候选状态生成深层采集任务并写入 crawl_tasks collection + MySQL crawling_tasks 表"""
+        """根据候选状态生成深层采集任务并写入 crawl_tasks collection"""
         scale = _CRAWL_SCALE.get(status)
         if not scale:
             return
@@ -419,7 +417,6 @@ class CandidateManager:
                 "attempts": 0,
             }
             col.insert_one(task_doc)
-            self._save_task_to_mysql(task_doc)
             tasks_created += 1
 
         if tasks_created:
@@ -427,63 +424,6 @@ class CandidateManager:
                 f"[Candidate] 为 {candidate['canonical_title'][:20]} "
                 f"生成 {tasks_created} 个爬取任务 (status={status})"
             )
-
-    def _get_mysql_engine(self):
-        """懒初始化 MySQL 引擎"""
-        if self._mysql_engine is None:
-            dialect = (settings.DB_DIALECT or "mysql").lower()
-            if dialect in ("postgresql", "postgres"):
-                url = (
-                    f"postgresql+psycopg://{settings.DB_USER}:"
-                    f"{quote_plus(settings.DB_PASSWORD)}@"
-                    f"{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
-                )
-            else:
-                url = (
-                    f"mysql+pymysql://{settings.DB_USER}:"
-                    f"{quote_plus(settings.DB_PASSWORD)}@"
-                    f"{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
-                    f"?charset={settings.DB_CHARSET}"
-                )
-            self._mysql_engine = create_engine(url, future=True)
-        return self._mysql_engine
-
-    def _save_task_to_mysql(self, task_doc: dict) -> None:
-        """将爬取任务同步写入 MySQL crawling_tasks 表"""
-        try:
-            engine = self._get_mysql_engine()
-            now_ts = int(time.time())
-            with engine.begin() as conn:
-                conn.execute(text("""
-                    INSERT INTO crawling_tasks
-                        (task_id, topic_id, platform, search_keywords,
-                         task_status, config_params, scheduled_date,
-                         add_ts, last_modify_ts)
-                    VALUES
-                        (:task_id, :topic_id, :platform, :search_keywords,
-                         :task_status, :config_params, :scheduled_date,
-                         :add_ts, :last_modify_ts)
-                    ON DUPLICATE KEY UPDATE last_modify_ts = :last_modify_ts
-                """), {
-                    "task_id": task_doc["task_id"],
-                    "topic_id": task_doc["candidate_id"],
-                    "platform": task_doc["platform"],
-                    "search_keywords": json.dumps(
-                        task_doc["search_keywords"], ensure_ascii=False
-                    ),
-                    "task_status": "pending",
-                    "config_params": json.dumps({
-                        "max_notes": task_doc["max_notes"],
-                        "priority": task_doc["priority"],
-                        "topic_title": task_doc.get("topic_title", ""),
-                    }, ensure_ascii=False),
-                    "scheduled_date": date.today(),
-                    "add_ts": now_ts,
-                    "last_modify_ts": now_ts,
-                })
-            logger.debug(f"[Candidate] MySQL crawling_tasks 写入: {task_doc['task_id']}")
-        except Exception as e:
-            logger.warning(f"[Candidate] MySQL crawling_tasks 写入失败: {e}")
 
     # ==================== 持久化 ====================
 

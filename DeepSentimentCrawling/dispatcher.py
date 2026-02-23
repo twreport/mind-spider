@@ -7,8 +7,11 @@ TaskDispatcher — 异步任务调度器
 """
 
 import asyncio
+import json
 import time
 from typing import Optional
+from datetime import date
+from urllib.parse import quote_plus
 
 from loguru import logger
 
@@ -19,6 +22,7 @@ _PROJECT_ROOT = str(Path(__file__).parent.parent)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 from ms_config import settings
+from sqlalchemy import create_engine, text
 
 from BroadTopicExtraction.pipeline.mongo_writer import MongoWriter
 from DeepSentimentCrawling.worker import PlatformWorker
@@ -51,6 +55,7 @@ class TaskDispatcher:
         self.cookie_manager = cookie_manager or CookieManager()
         self.mongo = mongo_writer or MongoWriter(db_name=settings.MONGO_SIGNAL_DB_NAME)
         self.dry_run = dry_run
+        self._mysql_engine = None
 
         self.workers: dict[str, PlatformWorker] = {}
         self.platform_locks: dict[str, asyncio.Lock] = {}
@@ -64,6 +69,26 @@ class TaskDispatcher:
             self.platform_locks[plat] = asyncio.Lock()
             self.failure_counts[plat] = 0
             self.circuit_open_until[plat] = 0
+
+    def _get_mysql_engine(self):
+        """懒初始化 MySQL 引擎"""
+        if self._mysql_engine is None:
+            dialect = (settings.DB_DIALECT or "mysql").lower()
+            if dialect in ("postgresql", "postgres"):
+                url = (
+                    f"postgresql+psycopg://{settings.DB_USER}:"
+                    f"{quote_plus(settings.DB_PASSWORD)}@"
+                    f"{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
+                )
+            else:
+                url = (
+                    f"mysql+pymysql://{settings.DB_USER}:"
+                    f"{quote_plus(settings.DB_PASSWORD)}@"
+                    f"{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
+                    f"?charset={settings.DB_CHARSET}"
+                )
+            self._mysql_engine = create_engine(url, future=True)
+        return self._mysql_engine
 
     def ensure_indexes(self):
         """创建 crawl_tasks 索引"""
@@ -109,9 +134,88 @@ class TaskDispatcher:
         )
 
     def _update_task_status(self, task_id: str, updates: dict):
-        """更新任务状态"""
+        """更新任务状态（MongoDB + MySQL）"""
         col = self.mongo.get_collection(CRAWL_TASKS_COLLECTION)
         col.update_one({"task_id": task_id}, {"$set": updates})
+        self._update_mysql_task_status(task_id, updates)
+
+    def _update_mysql_task_status(self, task_id: str, updates: dict) -> None:
+        """同步更新 MySQL 任务状态"""
+        try:
+            engine = self._get_mysql_engine()
+            now_ts = int(time.time())
+            set_clauses = []
+            params = {"task_id": task_id, "last_modify_ts": now_ts}
+
+            # 映射更新字段
+            if "status" in updates:
+                set_clauses.append("task_status = :status")
+                params["status"] = updates["status"]
+                # 记录开始/结束时间
+                if updates["status"] == "running":
+                    set_clauses.append("start_time = :start_time")
+                    params["start_time"] = now_ts
+                elif updates["status"] in ("completed", "failed"):
+                    set_clauses.append("end_time = :end_time")
+                    params["end_time"] = now_ts
+                # 失败时记录错误信息
+                if "error" in updates and updates["status"] == "failed":
+                    set_clauses.append("error_message = :error_message")
+                    params["error_message"] = updates["error"]
+                    set_clauses.append("error_count = error_count + 1")
+                elif updates["status"] == "completed":
+                    set_clauses.append("error_count = 0")
+
+            # 记录爬取数量
+            if "total_crawled" in updates:
+                set_clauses.append("total_crawled = :total_crawled")
+                params["total_crawled"] = updates["total_crawled"]
+            if "success_count" in updates:
+                set_clauses.append("success_count = :success_count")
+                params["success_count"] = updates["success_count"]
+
+            if set_clauses:
+                sql = f"UPDATE crawling_tasks SET {', '.join(set_clauses)} WHERE task_id = :task_id"
+                with engine.begin() as conn:
+                    conn.execute(text(sql), params)
+        except Exception as e:
+            logger.warning(f"[Dispatcher] MySQL 状态更新失败 {task_id}: {e}")
+
+    def _insert_task_to_mysql(self, task: dict) -> None:
+        """任务启动时插入 MySQL crawling_tasks 表"""
+        try:
+            engine = self._get_mysql_engine()
+            now_ts = int(time.time())
+            config_params = json.dumps({
+                "max_notes": task.get("max_notes"),
+                "priority": task.get("priority"),
+                "topic_title": task.get("topic_title", ""),
+            }, ensure_ascii=False)
+
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    INSERT INTO crawling_tasks
+                        (task_id, topic_id, platform, search_keywords,
+                         task_status, start_time, config_params,
+                         scheduled_date, add_ts, last_modify_ts)
+                    VALUES
+                        (:task_id, :topic_id, :platform, :search_keywords,
+                         'pending', :start_time, :config_params,
+                         :scheduled_date, :add_ts, :last_modify_ts)
+                    ON DUPLICATE KEY UPDATE last_modify_ts = :last_modify_ts
+                """), {
+                    "task_id": task["task_id"],
+                    "topic_id": task["candidate_id"],
+                    "platform": task["platform"],
+                    "search_keywords": json.dumps(task["search_keywords"], ensure_ascii=False),
+                    "start_time": now_ts,
+                    "config_params": config_params,
+                    "scheduled_date": date.today(),
+                    "add_ts": now_ts,
+                    "last_modify_ts": now_ts,
+                })
+        except Exception as e:
+            logger.warning(f"[Dispatcher] MySQL 任务插入失败 {task['task_id']}: {e}")
 
     async def _execute_one(self, task: dict):
         """执行单个任务（在平台锁内）"""
@@ -122,11 +226,12 @@ class TaskDispatcher:
             logger.info(f"[Dispatcher] DRY RUN: 跳过任务 {task_id} ({platform})")
             return
 
-        # 标记为 running
+        # 标记为 running（同时插入 MySQL 记录）
         self._update_task_status(task_id, {
             "status": "running",
             "started_at": int(time.time()),
         })
+        self._insert_task_to_mysql(task)
 
         worker = self.workers.get(platform)
         if not worker:
@@ -152,6 +257,16 @@ class TaskDispatcher:
 
         else:
             # 失败
+            self.failure_counts[platform] = 0
+            logger.info(f"[Dispatcher] 任务 {task_id} 完成")
+
+        elif status == "blocked":
+            # cookie 缺失，退回 pending，不计入重试
+            self._update_task_status(task_id, {"status": "pending"})
+            logger.warning(f"[Dispatcher] 任务 {task_id} 因 cookie 缺失阻塞")
+
+        else:
+            # 失败
             attempts = task.get("attempts", 0) + 1
             self.failure_counts[platform] = self.failure_counts.get(platform, 0) + 1
 
@@ -160,13 +275,27 @@ class TaskDispatcher:
                     "status": "failed",
                     "attempts": attempts,
                     "error": result.get("error", "unknown"),
-                    "failed_at": int(time.time()),
+                    "end_time": int(time.time()),
                 })
                 logger.warning(f"[Dispatcher] 任务 {task_id} 重试耗尽，标记为失败")
             else:
                 # 计算退避时间
                 backoff = self.RETRY_BACKOFF[min(attempts - 1, len(self.RETRY_BACKOFF) - 1)]
                 next_retry = int(time.time()) + backoff
+                self._update_task_status(task_id, {
+                    "status": "pending",
+                    "attempts": attempts,
+                    "next_retry_at": next_retry,
+                    "last_error": result.get("error", "unknown"),
+                })
+                logger.info(
+                    f"[Dispatcher] 任务 {task_id} 第 {attempts} 次失败，"
+                    f"{backoff}s 后重试"
+                )
+
+            # 检查熔断
+            if self.failure_counts[platform] >= self.CIRCUIT_THRESHOLD:
+                self._trip_circuit(platform, f"连续 {self.CIRCUIT_THRESHOLD} 次失败")
                 self._update_task_status(task_id, {
                     "status": "pending",
                     "attempts": attempts,
