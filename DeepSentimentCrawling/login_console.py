@@ -843,59 +843,84 @@ async def create_task(request: Request, token: str = Query("")):
         raise HTTPException(status_code=500, detail="MongoWriter 未初始化")
 
     body = await request.json()
-    platform = body.get("platform", "").strip()
+    topic_title = (body.get("topic_title") or "").strip()
+    platform = (body.get("platform") or "").strip()
     search_keywords = body.get("search_keywords")
     max_notes = body.get("max_notes", 50)
 
-    # 校验 platform
-    if not platform or platform not in _VALID_PLATFORMS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"platform 必须是 {sorted(_VALID_PLATFORMS)} 之一",
-        )
+    # topic_title 必填
+    if not topic_title:
+        raise HTTPException(status_code=400, detail="topic_title 为必填项")
 
-    # 校验 search_keywords
+    # platform: 传了就校验，没传则全平台
+    if platform:
+        if platform not in _VALID_PLATFORMS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"platform 必须是 {sorted(_VALID_PLATFORMS)} 之一",
+            )
+        platforms = [platform]
+    else:
+        platforms = sorted(_VALID_PLATFORMS)
+
+    # search_keywords: 没传则等于 [topic_title]
     if not search_keywords or not isinstance(search_keywords, list) or len(search_keywords) == 0:
-        raise HTTPException(status_code=400, detail="search_keywords 必须是非空数组")
+        search_keywords = [topic_title]
 
-    # 生成 task_id
+    # 为每个平台生成一个任务
     ts = int(time.time())
-    short_uuid = uuid.uuid4().hex[:8]
-    task_id = f"ut_{platform}_{short_uuid}_{ts}"
+    task_ids = []
 
-    task_doc = {
-        "task_id": task_id,
-        "candidate_id": "user_api",
-        "topic_title": body.get("topic_title", search_keywords[0]),
-        "platform": platform,
-        "search_keywords": search_keywords,
-        "max_notes": max_notes,
-        "priority": 100,
-        "status": "pending",
-        "created_at": ts,
-        "attempts": 0,
-        "_source": "user",
-    }
+    _mongo.connect()
+    col = _mongo.get_collection("crawl_tasks")
 
-    # 写 MongoDB（状态跟踪）
-    try:
-        _mongo.connect()
-        col = _mongo.get_collection("crawl_tasks")
-        col.insert_one(task_doc.copy())
-    except Exception as e:
-        logger.error(f"[API] MongoDB 写入失败: {e}")
-        raise HTTPException(status_code=500, detail=f"MongoDB 写入失败: {e}")
+    for plat in platforms:
+        short_uuid = uuid.uuid4().hex[:8]
+        task_id = f"ut_{plat}_{short_uuid}_{ts}"
 
-    # 推 Redis
-    try:
-        from DeepSentimentCrawling.task_queue import get_task_queue
-        queue = get_task_queue()
-        queue.push_user_task(task_doc)
-    except Exception as e:
-        logger.warning(f"[API] Redis 推送失败（MongoDB 已写入）: {e}")
+        task_doc = {
+            "task_id": task_id,
+            "candidate_id": "user_api",
+            "topic_title": topic_title,
+            "platform": plat,
+            "search_keywords": search_keywords,
+            "max_notes": max_notes,
+            "priority": 100,
+            "status": "pending",
+            "created_at": ts,
+            "attempts": 0,
+            "_source": "user",
+        }
 
-    logger.info(f"[API] 用户任务已创建: {task_id} platform={platform} keywords={search_keywords}")
-    return JSONResponse({"task_id": task_id, "status": "ok"})
+        # 写 MongoDB
+        try:
+            col.insert_one(task_doc.copy())
+        except Exception as e:
+            logger.error(f"[API] MongoDB 写入失败 {task_id}: {e}")
+            continue
+
+        # 推 Redis
+        try:
+            from DeepSentimentCrawling.task_queue import get_task_queue
+            queue = get_task_queue()
+            queue.push_user_task(task_doc)
+        except Exception as e:
+            logger.warning(f"[API] Redis 推送失败 {task_id}（MongoDB 已写入）: {e}")
+
+        task_ids.append(task_id)
+
+    if not task_ids:
+        raise HTTPException(status_code=500, detail="所有任务创建失败")
+
+    logger.info(
+        f"[API] 用户任务已创建: {len(task_ids)} 个, "
+        f"platforms={platforms} keywords={search_keywords}"
+    )
+    return JSONResponse({
+        "task_ids": task_ids,
+        "count": len(task_ids),
+        "status": "ok",
+    })
 
 
 @app.get("/api/tasks")
