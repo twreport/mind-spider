@@ -39,9 +39,11 @@ _SURFACE_TO_DEEP = {
 }
 
 # 按候选状态定义爬取规模
+# 按候选状态定义爬取规模（只在进入对应状态时触发）
+# 目前只在 exploded 时触发，如需更早介入可取消注释：
 _CRAWL_SCALE = {
-    "rising":    {"platforms": 3, "max_notes": 10, "priority": 1},
-    "confirmed": {"platforms": 5, "max_notes": 30, "priority": 2},
+    # "rising":    {"platforms": 3, "max_notes": 10, "priority": 1},
+    # "confirmed": {"platforms": 5, "max_notes": 30, "priority": 2},
     "exploded":  {"platforms": 7, "max_notes": 50, "priority": 3},
 }
 
