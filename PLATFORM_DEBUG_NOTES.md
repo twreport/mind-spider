@@ -14,7 +14,7 @@ MindSpider 深层采集模块支持 7 个社交平台。2026-02-22 调试了快�
 | tieba | curl | curl | ✅ | Python requests 被 TLS 指纹检测，改用 curl 子进程 |
 | ks | API | DOM 提取 | ✅ | GraphQL commentListQuery 已废弃，改 DOM 提取 |
 | dy | 搜索框+拦截 | API | ✅ | API 搜索被 verify_check，搜索框方式绕过 |
-| xhs | ? | ? | ❓ | **未测试** |
+| xhs | API | API | ✅ | POST+xhshow签名搜索、feed详情、评论分页均正常 |
 
 ## 调试方法论
 
@@ -184,24 +184,33 @@ async def _curl_get(self, url: str) -> str:
 系统 curl 使用 OpenSSL 的 TLS 实现，其 JA3 指纹与 Python 的 ssl/urllib3 完全不同。
 百度的 JA3 指纹检测无法将 curl 识别为爬虫，请求正常通过（200, 52KB, 1.3s）。
 
-## 小红书(xhs)待测试
+## 小红书(xhs)调试记录
 
-### 建议测试步骤
+### 测试结果 (2026-02-23)
 
-1. 先写 `scripts/test_xhs_comments.py` 独立测试脚本
-2. 从 MongoDB 获取 xhs 的 cookie：
-   ```python
-   doc = db.platform_cookies.find_one({"platform": "xhs", "status": "active"})
-   ```
-3. 参考已有的 xhs client: `media_platform/xhs/client.py`
-4. 测试搜索 → 评论 → 检查 MySQL 数据（表名 `xhs_note`、`xhs_note_comment`）
-5. 如果 API 方式失败，按上面的方法论逐步尝试其他方案
+用 `scripts/test_xhs_search.py` 测试，**全部通过**：
+
+| 功能 | 方式 | 结果 | 说明 |
+|------|------|------|------|
+| 搜索 | API POST + xhshow 签名 | 22 条 | `edith.xiaohongshu.com/api/sns/web/v1/search/notes` |
+| 搜索 | 响应拦截（浏览器搜索页） | 66 条 | 导航到 `/search_result?keyword=` 页面拦截 |
+| 笔记详情 | API (feed 接口) | 5/5 | `/api/sns/web/v1/feed` POST |
+| 笔记详情 | HTML 解析 (`__INITIAL_STATE__`) | 5/5 | 备用方案，也正常 |
+| 评论 | API 分页 | 42 条/5 篇 | `/api/sns/web/v2/comment/page`，含 IP 归属地 |
+
+### 关键点
+
+- **签名**: 使用 `xhshow` 库生成 `X-S`、`X-T`、`x-S-Common`、`X-B3-Traceid` 请求头
+- **cookie**: 关键字段为 `a1`（签名必需）、`web_session`、`webId`
+- **无需特殊绕过**: 与抖音/贴吧不同，XHS 的 API 接口直接可用，httpx + 签名即可
+- **双路详情**: API 和 HTML 解析两种方式都正常，HTML 方式作为 fallback
 
 ### 关键文件
-- `media_platform/xhs/client.py` — XHS API 客户端
+- `media_platform/xhs/client.py` — XHS API 客户端（搜索、详情、评论）
 - `media_platform/xhs/core.py` — XHS 爬虫核心逻辑
+- `media_platform/xhs/help.py` — 签名工具函数
 - `store/xhs/__init__.py` — XHS 数据存储
-- `database/models.py` — ORM 模型（XhsNote, XhsNoteComment）
+- `scripts/test_xhs_search.py` — 独立诊断脚本
 
 ## 服务器信息
 
