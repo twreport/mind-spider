@@ -144,7 +144,7 @@ async def update_xhs_note_comment(note_id: str, comment_item: Dict):
     user_info = comment_item.get("user_info", {})
     comment_id = comment_item.get("id")
     comment_pictures = [item.get("url_default", "") for item in comment_item.get("pictures", [])]
-    target_comment = comment_item.get("target_comment", {})
+    target_comment = comment_item.get("target_comment") or {}
     local_db_item = {
         "comment_id": comment_id,  # 评论id
         "create_time": comment_item.get("create_time"),  # 评论时间
