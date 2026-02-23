@@ -82,7 +82,7 @@ DROP TABLE IF EXISTS `crawling_tasks`;
 CREATE TABLE `crawling_tasks` (
     `id` int NOT NULL AUTO_INCREMENT COMMENT '自增ID',
     `task_id` varchar(64) NOT NULL COMMENT '任务唯一ID',
-    `topic_id` varchar(64) NOT NULL COMMENT '关联的话题ID',
+    `topic_id` varchar(64) NOT NULL COMMENT '关联的候选话题ID(candidate_id)',
     `platform` varchar(32) NOT NULL COMMENT '目标平台(xhs|dy|ks|bili|wb|tieba|zhihu)',
     `search_keywords` text NOT NULL COMMENT '搜索关键词(JSON格式存储)',
     `task_status` varchar(16) DEFAULT 'pending' COMMENT '任务状态(pending|running|completed|failed|paused)',
@@ -101,8 +101,8 @@ CREATE TABLE `crawling_tasks` (
     KEY `idx_crawling_tasks_topic` (`topic_id`),
     KEY `idx_crawling_tasks_platform` (`platform`),
     KEY `idx_crawling_tasks_status` (`task_status`),
-    KEY `idx_crawling_tasks_date` (`scheduled_date`),
-    FOREIGN KEY (`topic_id`) REFERENCES `daily_topics`(`topic_id`) ON DELETE CASCADE
+    KEY `idx_crawling_tasks_date` (`scheduled_date`)
+    -- 注：topic_id 存储 candidate_id，不再外键关联 daily_topics
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='爬取任务表';
 
 -- ===============================

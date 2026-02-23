@@ -103,7 +103,7 @@ class CrawlingTask(Base):
         Index("idx_crawling_tasks_status", "task_status"),
         Index("idx_crawling_tasks_date", "scheduled_date"),
         Index("idx_task_topic_platform", "topic_id", "platform", "task_status"),
-        ForeignKeyConstraint(["topic_id"], ["daily_topics.topic_id"], ondelete="CASCADE"),
+        # 外键已移除：topic_id 现在存储 candidate_id，不再关联 daily_topics
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
