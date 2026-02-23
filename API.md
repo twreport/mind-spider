@@ -15,7 +15,7 @@
 **请求:**
 
 ```bash
-# 全平台爬取（不传 platform 则 7 个平台各生成一个任务）
+# 全平台爬取（不传 platforms 则 7 个平台各生成一个任务）
 curl -X POST "http://localhost:8777/api/tasks?token=xxx" \
   -H "Content-Type: application/json" \
   -d '{"topic_title": "新能源汽车舆情"}'
@@ -25,7 +25,7 @@ curl -X POST "http://localhost:8777/api/tasks?token=xxx" \
   -H "Content-Type: application/json" \
   -d '{
     "topic_title": "新能源汽车舆情",
-    "platform": "xhs",
+    "platforms": ["wb", "bili"],
     "search_keywords": ["新能源汽车", "电动车"],
     "max_notes": 100
   }'
@@ -34,7 +34,7 @@ curl -X POST "http://localhost:8777/api/tasks?token=xxx" \
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `topic_title` | string | **是** | 话题标题 |
-| `platform` | string | 否 | 平台代码: `xhs` `dy` `bili` `wb` `ks` `tieba` `zhihu`。不传则全部 7 个平台 |
+| `platforms` | string[] | 否 | 平台代码数组: `xhs` `dy` `bili` `wb` `ks` `tieba` `zhihu`。不传则全部 7 个平台 |
 | `search_keywords` | string[] | 否 | 搜索关键词数组。不传则等于 `[topic_title]` |
 | `max_notes` | int | 否 | 每个平台最大采集数量，默认 50 |
 
