@@ -898,9 +898,42 @@ async def create_task(request: Request, token: str = Query("")):
     return JSONResponse({"task_id": task_id, "status": "ok"})
 
 
+@app.get("/api/tasks")
+async def list_tasks(
+    token: str = Query(""),
+    platform: str = Query("", description="按平台过滤"),
+    status: str = Query("", description="按状态过滤: pending/running/completed/failed"),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """列出任务（支持 platform / status 过滤）"""
+    _check_token(token)
+
+    if not _mongo:
+        raise HTTPException(status_code=500, detail="MongoWriter 未初始化")
+
+    _mongo.connect()
+    col = _mongo.get_collection("crawl_tasks")
+
+    query: dict = {}
+    if platform:
+        if platform not in _VALID_PLATFORMS:
+            raise HTTPException(status_code=400, detail=f"platform 无效: {platform}")
+        query["platform"] = platform
+    if status:
+        query["status"] = status
+
+    docs = list(
+        col.find(query, {"_id": 0})
+        .sort([("created_at", -1)])
+        .limit(limit)
+    )
+    content = json.loads(json.dumps(docs, ensure_ascii=False, default=str))
+    return JSONResponse({"total": len(content), "tasks": content})
+
+
 @app.get("/api/tasks/{task_id}")
 async def get_task(task_id: str, token: str = Query("")):
-    """查询任务状态"""
+    """查询单个任务状态"""
     _check_token(token)
 
     if not _mongo:
@@ -915,6 +948,43 @@ async def get_task(task_id: str, token: str = Query("")):
     # 确保所有值可序列化（如 ObjectId、datetime 等）
     content = json.loads(json.dumps(doc, ensure_ascii=False, default=str))
     return JSONResponse(content)
+
+
+@app.delete("/api/tasks/{task_id}")
+async def cancel_task(task_id: str, token: str = Query("")):
+    """取消 pending 状态的任务"""
+    _check_token(token)
+
+    if not _mongo:
+        raise HTTPException(status_code=500, detail="MongoWriter 未初始化")
+
+    _mongo.connect()
+    col = _mongo.get_collection("crawl_tasks")
+    doc = col.find_one({"task_id": task_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+
+    if doc["status"] not in ("pending",):
+        raise HTTPException(
+            status_code=409,
+            detail=f"只能取消 pending 状态的任务，当前状态: {doc['status']}",
+        )
+
+    col.update_one(
+        {"task_id": task_id},
+        {"$set": {"status": "cancelled", "cancelled_at": int(time.time())}},
+    )
+
+    # 尝试从 Redis 队列移除
+    try:
+        from DeepSentimentCrawling.task_queue import get_task_queue
+        queue = get_task_queue()
+        queue.remove_task(task_id, prefix="user")
+    except Exception as e:
+        logger.warning(f"[API] Redis 移除失败: {e}")
+
+    logger.info(f"[API] 任务已取消: {task_id}")
+    return JSONResponse({"task_id": task_id, "status": "cancelled"})
 
 
 async def cleanup():

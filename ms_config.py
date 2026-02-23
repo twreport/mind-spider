@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     MINDSPIDER_BASE_URL: Optional[str] = Field("https://api.deepseek.com", description="MINDSPIDER API基础URL，推荐deepseek-chat模型使用https://api.deepseek.com")
     MINDSPIDER_MODEL_NAME: Optional[str] = Field("deepseek-chat", description="MINDSPIDER API模型名称, 推荐deepseek-chat")
 
+    # Redis 配置
+    REDIS_DB_HOST: str = Field("10.168.1.80", description="Redis 主机")
+    REDIS_DB_PORT: int = Field(6379, description="Redis 端口")
+    REDIS_DB_PWD: str = Field("", description="Redis 密码")
+    REDIS_DB_NUM: int = Field(11, description="Redis 数据库编号")
+
     # 深层采集服务配置
     SERVERCHAN_KEY: str = Field("", description="Server酱 SendKey，用于 cookie 过期等告警推送")
     LOGIN_CONSOLE_PORT: int = Field(8777, description="登录控制台端口")

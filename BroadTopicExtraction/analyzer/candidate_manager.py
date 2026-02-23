@@ -365,7 +365,7 @@ class CandidateManager:
             self._emit_crawl_tasks(candidate, new_status, now)
 
     def _emit_crawl_tasks(self, candidate: dict, status: str, now: int) -> None:
-        """根据候选状态生成深层采集任务并写入 crawl_tasks collection"""
+        """根据候选状态生成深层采集任务并写入 crawl_tasks collection + Redis 任务队列"""
         scale = _CRAWL_SCALE.get(status)
         if not scale:
             return
@@ -416,13 +416,21 @@ class CandidateManager:
                 "created_at": now,
                 "attempts": 0,
             }
+            # 写入 MongoDB（作为任务状态日志）
             col.insert_one(task_doc)
+            # 推送到 Redis 任务队列
+            try:
+                from DeepSentimentCrawling.task_queue import get_task_queue
+                queue = get_task_queue()
+                queue.push_candidate_task(cand_id, status, task_doc)
+            except Exception as e:
+                logger.warning(f"[Candidate] Redis 推送失败（任务已在 MongoDB）: {e}")
             tasks_created += 1
 
         if tasks_created:
             logger.info(
                 f"[Candidate] 为 {candidate['canonical_title'][:20]} "
-                f"生成 {tasks_created} 个爬取任务 (status={status})"
+                f"生成 {tasks_created} 个爬取任务 (status={status}) 并推送到 Redis 队列"
             )
 
     # ==================== 持久化 ====================
