@@ -35,21 +35,55 @@ curl -X POST "http://localhost:8777/api/tasks?token=xxx" \
 |------|------|------|------|
 | `topic_title` | string | **是** | 话题标题 |
 | `platforms` | string[] | 否 | 平台代码数组: `xhs` `dy` `bili` `wb` `ks` `tieba` `zhihu`。不传则全部 7 个平台 |
-| `search_keywords` | string[] | 否 | 搜索关键词数组。不传则等于 `[topic_title]` |
+| `search_keywords` | string[] | 否 | 搜索关键词数组。不传则等于 `[topic_title]` + LLM 自动扩展 |
 | `max_notes` | int | 否 | 每个平台最大采集数量，默认 50 |
+| `force` | bool | 否 | 强制创建任务，跳过话题匹配。默认 `false` |
+
+**话题匹配与关键词扩展**
+
+提交任务时会自动执行：
+1. **精确去重** — 24h 内相同 `topic_title` 的用户任务直接返回已有数据
+2. **候选匹配** — jieba 预筛 + LLM 三分类判断（`duplicate` / `development` / `different`）
+3. **关键词扩展** — 用户未传 `search_keywords` 时，LLM 自动生成最多 2 个补充关键词
+
+**匹配类型说明：**
+- `duplicate` — 同一事件同一角度，返回已有数据，不创建任务
+- `development` — 同一事件新进展/新角度，创建任务但关联已有 `candidate_id`
+- `different` — 无关事件，正常创建新任务
 
 **响应:**
+
+正常创建（different 或 development）：
 
 ```json
 {
   "task_ids": [
     "ut_bili_a1b2c3d4_1740000000",
     "ut_dy_e5f6a7b8_1740000000",
-    "ut_ks_c9d0e1f2_1740000000",
     "..."
   ],
   "count": 7,
-  "status": "ok"
+  "status": "ok",
+  "search_keywords": ["平顶山被打女孩视力受损", "平顶山", "视力"]
+}
+```
+
+命中缓存（duplicate）：
+
+```json
+{
+  "status": "matched",
+  "message": "该话题已有深度采集数据",
+  "match": {
+    "candidate_id": "cand_xxx",
+    "canonical_title": "平顶山打人事件",
+    "status": "tracking",
+    "source_titles": ["警方通报平顶山打人事件", "平顶山被打女孩半昏迷"],
+    "crawl_stats": {"total_tasks": 7, "completed": 7, "platforms": ["xhs","dy",...]},
+    "match_method": "llm|jieba|exact",
+    "confidence": 0.92,
+    "reason": "用户话题与候选指向同一事件同一角度"
+  }
 }
 ```
 
