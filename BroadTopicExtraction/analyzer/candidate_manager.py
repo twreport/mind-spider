@@ -47,7 +47,7 @@ _SURFACE_TO_DEEP = {
 _CRAWL_SCALE = {
     # "rising":    {"platforms": 3, "max_notes": 10, "priority": 1},
     # "confirmed": {"platforms": 5, "max_notes": 30, "priority": 2},
-    "exploded":  {"platforms": 7, "max_notes": 50, "priority": 3},
+    "exploded":  {"platforms": 7, "max_notes": 20, "priority": 3},
 }
 
 # 加载平台权重（从 platforms.yaml）

@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     MINDSPIDER_BASE_URL: Optional[str] = Field("https://api.deepseek.com", description="MINDSPIDER API基础URL，推荐deepseek-chat模型使用https://api.deepseek.com")
     MINDSPIDER_MODEL_NAME: Optional[str] = Field("deepseek-chat", description="MINDSPIDER API模型名称, 推荐deepseek-chat")
 
+    # 轻量 LLM 配置（话题匹配 + 关键词扩展，推荐 qwen-flash 等低成本模型）
+    TOPIC_MATCHER_API_KEY: Optional[str] = Field(None, description="话题匹配 LLM API Key，为空则复用 MINDSPIDER_API_KEY")
+    TOPIC_MATCHER_BASE_URL: Optional[str] = Field(None, description="话题匹配 LLM Base URL，为空则复用 MINDSPIDER_BASE_URL")
+    TOPIC_MATCHER_MODEL_NAME: Optional[str] = Field("qwen-flash", description="话题匹配 LLM 模型名称")
+
     # Redis 配置
     REDIS_DB_HOST: str = Field("10.168.1.80", description="Redis 主机")
     REDIS_DB_PORT: int = Field(6379, description="Redis 端口")

@@ -8,6 +8,7 @@
 
 import argparse
 import asyncio
+import logging
 import signal
 import threading
 
@@ -28,7 +29,42 @@ if _PROJECT_ROOT not in sys.path:
 from ms_config import settings
 from DeepSentimentCrawling.cookie_manager import CookieManager
 from DeepSentimentCrawling.dispatcher import TaskDispatcher
-from DeepSentimentCrawling.login_console import app as login_app, init_cookie_manager, init_mongo_writer, cleanup as console_cleanup
+from DeepSentimentCrawling.login_console import app as login_app, init_cookie_manager, init_mongo_writer, init_topic_matcher, cleanup as console_cleanup
+
+LOG_DIR = Path(__file__).parent.parent / "logs"
+
+
+class _InterceptHandler(logging.Handler):
+    """将标准 logging（含 MediaCrawler）转发到 loguru"""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        logger.opt(depth=6, exception=record.exc_info).log(level, record.getMessage())
+
+
+def setup_logging(level: str = "INFO"):
+    """配置深层采集日志：终端 + 按天轮转文件"""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    logger.remove()
+    # 终端输出
+    logger.add(sys.stderr, level=level.upper(), format="{time:HH:mm:ss} | {level:<7} | {message}")
+    # 文件：按天轮转，保留 30 天
+    logger.add(
+        LOG_DIR / "deep_crawl_{time:YYYY-MM-DD}.log",
+        rotation="00:00",
+        retention="30 days",
+        level="DEBUG",
+        encoding="utf-8",
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level:<7} | {message}",
+    )
+    # 拦截 MediaCrawler 的标准 logging 转发到 loguru
+    logging.basicConfig(handlers=[_InterceptHandler()], level=logging.INFO, force=True)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("playwright").setLevel(logging.WARNING)
 
 
 def parse_args():
@@ -62,6 +98,7 @@ def start_login_console(port: int):
 
 async def main():
     args = parse_args()
+    setup_logging()
 
     port = args.port or settings.LOGIN_CONSOLE_PORT
     platforms = args.platforms.split(",") if args.platforms else None
@@ -79,6 +116,11 @@ async def main():
     )
 
     init_mongo_writer(dispatcher.mongo)
+
+    # 初始化话题匹配器
+    from DeepSentimentCrawling.topic_matcher import TopicMatcher
+    topic_matcher = TopicMatcher(mongo=dispatcher.mongo)
+    init_topic_matcher(topic_matcher)
 
     # 启动登录控制台（后台线程）
     console_thread = threading.Thread(

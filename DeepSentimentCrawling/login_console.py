@@ -47,6 +47,7 @@ _STEALTH_JS = os.path.join(
 # 全局状态
 _cookie_manager: Optional[CookieManager] = None
 _mongo = None
+_topic_matcher = None
 _browser: Optional[Browser] = None
 _active_sessions: dict[str, dict] = {}  # platform -> session info
 
@@ -121,6 +122,12 @@ def init_mongo_writer(m):
     """注入 MongoWriter 实例（供 /api/tasks 端点使用）"""
     global _mongo
     _mongo = m
+
+
+def init_topic_matcher(matcher):
+    """注入 TopicMatcher 实例（供 /api/tasks 端点使用）"""
+    global _topic_matcher
+    _topic_matcher = matcher
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -850,6 +857,7 @@ async def create_task(request: Request, token: str = Query("")):
     platforms_input = body.get("platforms")
     search_keywords = body.get("search_keywords")
     max_notes = body.get("max_notes", 50)
+    force = body.get("force", False)
 
     # topic_title 必填
     if not topic_title:
@@ -869,9 +877,35 @@ async def create_task(request: Request, token: str = Query("")):
     else:
         platforms = sorted(_VALID_PLATFORMS)
 
-    # search_keywords: 没传则等于 [topic_title]
-    if not search_keywords or not isinstance(search_keywords, list) or len(search_keywords) == 0:
-        search_keywords = [topic_title]
+    # --- 话题匹配（force=true 跳过）---
+    if not force and _topic_matcher:
+        try:
+            match_result = _topic_matcher.match(topic_title)
+            if match_result:
+                logger.info(f"[API] 话题匹配命中: {topic_title} -> {match_result.get('canonical_title')}")
+                return JSONResponse({
+                    "status": "matched",
+                    "message": "该话题已有深度采集数据",
+                    "match": match_result,
+                })
+        except Exception as e:
+            logger.warning(f"[API] 话题匹配异常，跳过: {e}")
+
+    # --- 关键词处理 ---
+    user_provided_keywords = (
+        isinstance(search_keywords, list) and len(search_keywords) > 0
+    )
+    if not user_provided_keywords:
+        # 用户没传 search_keywords，尝试 LLM 扩展
+        if _topic_matcher:
+            try:
+                search_keywords = _topic_matcher.expand_keywords(topic_title)
+            except Exception as e:
+                logger.warning(f"[API] 关键词扩展异常: {e}")
+                search_keywords = [topic_title]
+        else:
+            search_keywords = [topic_title]
+    # else: 用户传了 search_keywords，直接使用
 
     # 为每个平台生成一个任务
     ts = int(time.time())
@@ -926,6 +960,7 @@ async def create_task(request: Request, token: str = Query("")):
         "task_ids": task_ids,
         "count": len(task_ids),
         "status": "ok",
+        "search_keywords": search_keywords,
     })
 
 
