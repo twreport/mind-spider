@@ -44,7 +44,6 @@ class TaskDispatcher:
 
     POLL_INTERVAL = 10        # 轮询间隔（秒）
     CIRCUIT_THRESHOLD = 3     # 连续失败次数触发熔断
-    CIRCUIT_RESET_SEC = 1800  # 熔断恢复时间（30 分钟）
     MAX_ATTEMPTS = 3          # 单任务最大重试次数
     RETRY_BACKOFF = [120, 240, 480]  # 重试退避（秒）
 
@@ -65,7 +64,7 @@ class TaskDispatcher:
         self.workers: dict[str, PlatformWorker] = {}
         self.platform_locks: dict[str, asyncio.Lock] = {}
         self.failure_counts: dict[str, int] = {}
-        self.circuit_open_until: dict[str, float] = {}
+        self.circuit_open: dict[str, bool] = {}
 
         self._running = False
 
@@ -73,7 +72,7 @@ class TaskDispatcher:
             self.workers[plat] = PlatformWorker(cookie_manager=self.cookie_manager)
             self.platform_locks[plat] = asyncio.Lock()
             self.failure_counts[plat] = 0
-            self.circuit_open_until[plat] = 0
+            self.circuit_open[plat] = False
 
     # ==================== 基础设施 ====================
 
@@ -124,17 +123,19 @@ class TaskDispatcher:
     # ==================== 熔断器 ====================
 
     def _is_circuit_open(self, platform: str) -> bool:
-        until = self.circuit_open_until.get(platform, 0)
-        if until > 0 and time.time() < until:
-            return True
-        if until > 0:
-            self.circuit_open_until[platform] = 0
+        if not self.circuit_open.get(platform, False):
+            return False
+        # 检查 cookie 是否已被用户更新（status 变回 active）
+        cookies = self.cookie_manager.load_cookies(platform)
+        if cookies:
+            self.circuit_open[platform] = False
             self.failure_counts[platform] = 0
-            logger.info(f"[Dispatcher] {platform} 熔断器已自动恢复")
-        return False
+            logger.info(f"[Dispatcher] {platform} cookie 已更新，熔断器恢复")
+            return False
+        return True
 
     def _trip_circuit(self, platform: str, reason: str):
-        self.circuit_open_until[platform] = time.time() + self.CIRCUIT_RESET_SEC
+        self.circuit_open[platform] = True
         logger.warning(f"[Dispatcher] {platform} 熔断器触发: {reason}")
         # 熔断时标记 cookie 失效，等用户更新后恢复
         self.cookie_manager.mark_expired(platform)
