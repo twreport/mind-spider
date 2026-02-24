@@ -74,7 +74,6 @@ class CookieManager:
             "platform": platform,
             "cookies": cookie_dict,
             "saved_at": now,
-            "expires_hint": now + 7 * 86400,  # 默认 7 天过期提示
             "status": "active",
         }
         col = self.mongo.get_collection(COLLECTION)
@@ -117,7 +116,6 @@ class CookieManager:
                 "platform": doc["platform"],
                 "status": doc.get("status", "unknown"),
                 "saved_at": doc.get("saved_at"),
-                "expires_hint": doc.get("expires_hint"),
             })
         # 补充未注册平台
         registered = {d["platform"] for d in result}
@@ -127,7 +125,6 @@ class CookieManager:
                     "platform": plat,
                     "status": "missing",
                     "saved_at": None,
-                    "expires_hint": None,
                 })
         return sorted(result, key=lambda x: x["platform"])
 
