@@ -151,22 +151,62 @@ class TopicMatcher:
         return None
 
     def _fetch_deep_crawled_candidates(self) -> list[dict]:
-        """查 MongoDB candidates（已爬状态，最近 100 条）"""
+        """
+        查已爬取话题，两个来源合并去重：
+        1. candidates 集合（表层采集自动发现，status ∈ exploded/tracking/closed）
+        2. crawl_tasks 集合（用户发起的已完成/进行中任务，按 topic_title 去重）
+        """
+        results = []
+        seen_titles: set[str] = set()
+
         try:
             self.mongo.connect()
-            col = self.mongo.get_collection("candidates")
-            docs = list(
-                col.find(
+
+            # 来源 1: candidates 集合
+            cand_col = self.mongo.get_collection("candidates")
+            cand_docs = list(
+                cand_col.find(
                     {"status": {"$in": ["exploded", "tracking", "closed"]}},
                     {"candidate_id": 1, "canonical_title": 1, "source_titles": 1, "status": 1, "_id": 0},
                 )
                 .sort([("updated_at", -1)])
                 .limit(100)
             )
-            return docs
+            for doc in cand_docs:
+                results.append(doc)
+                seen_titles.add(doc.get("canonical_title", ""))
+
+            # 来源 2: crawl_tasks 中用户发起的已完成/进行中任务
+            task_col = self.mongo.get_collection("crawl_tasks")
+            pipeline = [
+                {"$match": {
+                    "_source": "user",
+                    "status": {"$in": ["completed", "running"]},
+                }},
+                {"$sort": {"created_at": -1}},
+                {"$group": {
+                    "_id": "$topic_title",
+                    "candidate_id": {"$first": "$candidate_id"},
+                    "status": {"$first": "$status"},
+                    "search_keywords": {"$first": "$search_keywords"},
+                }},
+                {"$limit": 50},
+            ]
+            for doc in task_col.aggregate(pipeline):
+                title = doc["_id"]
+                if title and title not in seen_titles:
+                    results.append({
+                        "candidate_id": doc.get("candidate_id", "user_api"),
+                        "canonical_title": title,
+                        "source_titles": [title],
+                        "status": doc.get("status", "completed"),
+                    })
+                    seen_titles.add(title)
+
         except Exception as e:
             logger.warning(f"[TopicMatcher] 候选查询失败: {e}")
-            return []
+
+        return results
 
     def _jieba_prefilter(
         self, topic_title: str, candidates: list[dict]
