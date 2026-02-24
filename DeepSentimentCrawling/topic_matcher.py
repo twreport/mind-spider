@@ -2,10 +2,16 @@
 """
 TopicMatcher — 话题匹配 + 关键词扩展
 
-流程：
-1. 精确去重：24h 内相同 topic_title 的用户任务
+匹配流程（三分类）：
+1. 精确去重：24h 内相同 topic_title 的用户任务 → duplicate
 2. 候选匹配：jieba 预筛 + LLM 语义判断
-3. 关键词扩展：LLM 生成补充搜索关键词
+   - duplicate: 同一事件同一角度，返回已有数据
+   - development: 同一事件新进展/新角度，需要爬取但关联已有 candidate
+   - different: 无关事件，正常新建
+
+关键词扩展（独立调用）：
+- 仅当用户未传 search_keywords 时触发
+- LLM 生成最多 2 个补充关键词
 """
 
 import json
@@ -32,6 +38,11 @@ _STOPWORDS = frozenset(
     "热搜 曝光 回应 官方 发布 公布 通报".split()
 )
 
+# 匹配结果类型
+MATCH_DUPLICATE = "duplicate"       # 同一事件同一角度，无需爬取
+MATCH_DEVELOPMENT = "development"   # 同一事件新进展，需要爬取
+MATCH_DIFFERENT = "different"       # 无关事件
+
 
 def _extract_keywords(title: str) -> set[str]:
     """用 jieba 从标题提取关键词，过滤停用词和单字"""
@@ -41,8 +52,19 @@ def _extract_keywords(title: str) -> set[str]:
     return {w for w in words if len(w) >= 2 and w not in _STOPWORDS}
 
 
+def _parse_llm_json(text: str) -> dict:
+    """从 LLM 输出中提取 JSON，容忍 markdown code block"""
+    text = text.strip()
+    if "```" in text:
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip()
+    return json.loads(text)
+
+
 class TopicMatcher:
-    """话题匹配 + 关键词扩展"""
+    """话题匹配 + 关键词扩展（两个独立 LLM 调用）"""
 
     def __init__(self, mongo: MongoWriter):
         self.mongo = mongo
@@ -60,14 +82,17 @@ class TopicMatcher:
             self.client = None
             logger.warning("[TopicMatcher] LLM 未配置，将仅使用 jieba 降级匹配")
 
-    # ── 话题匹配 ──────────────────────────────────────────────
+    # ── 话题匹配（三分类）──────────────────────────────────────
 
     def match(self, topic_title: str) -> Optional[dict]:
         """
-        主入口：精确去重 → jieba 预筛 → LLM 语义匹配 → jieba fallback
+        主入口：精确去重 → jieba 预筛 → LLM 三分类 → jieba fallback
 
         Returns:
-            匹配结果 dict（含 candidate 信息），未命中返回 None
+            匹配结果 dict，包含 match_type 字段：
+            - duplicate: 完全重复，无需爬取
+            - development: 事件进展，需爬取但关联已有 candidate
+            未命中返回 None（等价于 different）
         """
         # 1) 24h 精确去重
         exact = self._check_recent_user_tasks(topic_title)
@@ -84,13 +109,13 @@ class TopicMatcher:
         if not shortlist:
             return None
 
-        # 4) LLM 语义匹配
+        # 4) LLM 三分类
         if self._llm_available:
             llm_result = self._llm_match(topic_title, shortlist)
             if llm_result:
                 return llm_result
 
-        # 5) LLM 不可用或未命中，降级 jieba（overlap >= 0.6）
+        # 5) LLM 不可用或未命中，降级 jieba（overlap >= 0.6 → duplicate）
         return self._jieba_fallback(topic_title, shortlist)
 
     def _check_recent_user_tasks(self, topic_title: str) -> Optional[dict]:
@@ -111,6 +136,7 @@ class TopicMatcher:
                 task_id = doc.get("task_id", "")
                 logger.info(f"[TopicMatcher] 精确去重命中: {topic_title} -> {task_id}")
                 return {
+                    "match_type": MATCH_DUPLICATE,
                     "candidate_id": doc.get("candidate_id", "user_api"),
                     "canonical_title": topic_title,
                     "status": doc.get("status", "pending"),
@@ -145,16 +171,13 @@ class TopicMatcher:
     def _jieba_prefilter(
         self, topic_title: str, candidates: list[dict]
     ) -> list[tuple[dict, float]]:
-        """
-        jieba 关键词重叠率预筛，overlap >= 0.3，返回 top 10
-        """
+        """jieba 关键词重叠率预筛，overlap >= 0.3，返回 top 10"""
         user_kw = _extract_keywords(topic_title)
         if not user_kw:
             return []
 
         scored = []
         for cand in candidates:
-            # 合并 canonical_title + source_titles 的关键词
             titles = [cand.get("canonical_title", "")]
             titles.extend(cand.get("source_titles", []))
             cand_kw: set[str] = set()
@@ -174,7 +197,7 @@ class TopicMatcher:
     def _llm_match(
         self, topic_title: str, shortlist: list[tuple[dict, float]]
     ) -> Optional[dict]:
-        """LLM 语义判断"""
+        """LLM 三分类：duplicate / development / different"""
         candidates_text = json.dumps(
             [
                 {
@@ -190,9 +213,13 @@ class TopicMatcher:
         prompt = (
             f'用户话题："{topic_title}"\n'
             f"已有候选话题：{candidates_text}\n\n"
-            "任务：判断用户话题是否与某个候选指向同一事件。\n"
+            "判断用户话题与候选的关系，三选一：\n"
+            '- "duplicate"：同一事件、同一角度，信息完全重复\n'
+            '- "development"：同一事件，但有新进展、新角度或新信息\n'
+            '- "different"：不同事件，无关联\n\n'
             "输出 JSON（不要输出其他内容）：\n"
-            '{"match": bool, "matched_id": "candidate_id 或 null", '
+            '{"type": "duplicate|development|different", '
+            '"matched_id": "candidate_id 或 null", '
             '"confidence": 0.0-1.0, "reason": "简短原因"}'
         )
 
@@ -206,39 +233,39 @@ class TopicMatcher:
                 temperature=0.1,
                 max_tokens=200,
             )
-            text = resp.choices[0].message.content.strip()
-            # 提取 JSON（容忍 markdown code block）
-            if "```" in text:
-                text = text.split("```")[1]
-                if text.startswith("json"):
-                    text = text[4:]
-                text = text.strip()
-            result = json.loads(text)
+            result = _parse_llm_json(resp.choices[0].message.content)
+            match_type = result.get("type", "different")
+            matched_id = result.get("matched_id")
 
-            if result.get("match") and result.get("matched_id"):
-                matched_id = result["matched_id"]
-                # 查找匹配的候选
-                matched_cand = None
-                for c, _ in shortlist:
-                    if c.get("candidate_id") == matched_id:
-                        matched_cand = c
-                        break
+            if match_type == MATCH_DIFFERENT or not matched_id:
+                return None
 
-                if matched_cand:
-                    logger.info(
-                        f"[TopicMatcher] LLM 匹配命中: {topic_title} -> "
-                        f"{matched_cand.get('canonical_title')} (confidence={result.get('confidence')})"
-                    )
-                    return {
-                        "candidate_id": matched_id,
-                        "canonical_title": matched_cand.get("canonical_title", ""),
-                        "status": matched_cand.get("status", ""),
-                        "source_titles": matched_cand.get("source_titles", []),
-                        "crawl_stats": self._get_crawl_stats(matched_id),
-                        "match_method": "llm",
-                        "confidence": result.get("confidence", 0.0),
-                        "reason": result.get("reason", ""),
-                    }
+            # 查找匹配的候选
+            matched_cand = None
+            for c, _ in shortlist:
+                if c.get("candidate_id") == matched_id:
+                    matched_cand = c
+                    break
+
+            if not matched_cand:
+                return None
+
+            logger.info(
+                f"[TopicMatcher] LLM 匹配: {topic_title} -> "
+                f"{matched_cand.get('canonical_title')} "
+                f"(type={match_type}, confidence={result.get('confidence')})"
+            )
+            return {
+                "match_type": match_type,
+                "candidate_id": matched_id,
+                "canonical_title": matched_cand.get("canonical_title", ""),
+                "status": matched_cand.get("status", ""),
+                "source_titles": matched_cand.get("source_titles", []),
+                "crawl_stats": self._get_crawl_stats(matched_id),
+                "match_method": "llm",
+                "confidence": result.get("confidence", 0.0),
+                "reason": result.get("reason", ""),
+            }
         except Exception as e:
             logger.warning(f"[TopicMatcher] LLM 匹配调用失败: {e}")
         return None
@@ -246,7 +273,7 @@ class TopicMatcher:
     def _jieba_fallback(
         self, topic_title: str, shortlist: list[tuple[dict, float]]
     ) -> Optional[dict]:
-        """LLM 不可用时降级到 jieba（overlap >= 0.6）"""
+        """LLM 不可用时降级到 jieba（overlap >= 0.6 → duplicate）"""
         for cand, overlap in shortlist:
             if overlap >= 0.6:
                 logger.info(
@@ -255,6 +282,7 @@ class TopicMatcher:
                 )
                 cand_id = cand.get("candidate_id", "")
                 return {
+                    "match_type": MATCH_DUPLICATE,
                     "candidate_id": cand_id,
                     "canonical_title": cand.get("canonical_title", ""),
                     "status": cand.get("status", ""),
@@ -266,7 +294,7 @@ class TopicMatcher:
                 }
         return None
 
-    # ── 关键词扩展 ─────────────────────────────────────────────
+    # ── 关键词扩展（独立调用）─────────────────────────────────
 
     def expand_keywords(self, topic_title: str) -> list[str]:
         """
@@ -296,13 +324,7 @@ class TopicMatcher:
                 temperature=0.1,
                 max_tokens=200,
             )
-            text = resp.choices[0].message.content.strip()
-            if "```" in text:
-                text = text.split("```")[1]
-                if text.startswith("json"):
-                    text = text[4:]
-                text = text.strip()
-            result = json.loads(text)
+            result = _parse_llm_json(resp.choices[0].message.content)
             extra = result.get("extra_keywords", [])
             if isinstance(extra, list):
                 for kw in extra[:2]:
@@ -314,102 +336,6 @@ class TopicMatcher:
             logger.warning(f"[TopicMatcher] 关键词扩展失败，仅使用标题: {e}")
 
         return base
-
-    def match_and_expand(
-        self, topic_title: str, shortlist: list[tuple[dict, float]]
-    ) -> tuple[Optional[dict], list[str]]:
-        """
-        合并一次 LLM 调用完成匹配 + 关键词扩展（有候选时）。
-        Returns: (match_result, expanded_keywords)
-        """
-        if not self._llm_available:
-            match_result = self._jieba_fallback(topic_title, shortlist)
-            return match_result, [topic_title]
-
-        candidates_text = json.dumps(
-            [
-                {
-                    "id": c.get("candidate_id"),
-                    "canonical_title": c.get("canonical_title"),
-                    "source_titles": c.get("source_titles", [])[:5],
-                }
-                for c, _ in shortlist
-            ],
-            ensure_ascii=False,
-        )
-
-        prompt = (
-            f'用户话题："{topic_title}"\n'
-            f"已有候选话题：{candidates_text}\n\n"
-            "任务1：判断用户话题是否与某个候选指向同一事件。\n"
-            "任务2：如未匹配，为该话题生成最多 2 个适合社交媒体搜索的补充关键词。\n\n"
-            "输出 JSON（不要输出其他内容）：\n"
-            '{"match": bool, "matched_id": "candidate_id 或 null", '
-            '"confidence": 0.0-1.0, "reason": "简短原因", '
-            '"extra_keywords": ["补充关键词1", "补充关键词2"] 或 []}'
-        )
-
-        match_result = None
-        keywords = [topic_title]
-
-        try:
-            resp = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "你是话题匹配与关键词专家。只输出 JSON。"},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.1,
-                max_tokens=200,
-            )
-            text = resp.choices[0].message.content.strip()
-            if "```" in text:
-                text = text.split("```")[1]
-                if text.startswith("json"):
-                    text = text[4:]
-                text = text.strip()
-            result = json.loads(text)
-
-            # 处理匹配
-            if result.get("match") and result.get("matched_id"):
-                matched_id = result["matched_id"]
-                matched_cand = None
-                for c, _ in shortlist:
-                    if c.get("candidate_id") == matched_id:
-                        matched_cand = c
-                        break
-                if matched_cand:
-                    logger.info(
-                        f"[TopicMatcher] LLM 合并匹配命中: {topic_title} -> "
-                        f"{matched_cand.get('canonical_title')} (confidence={result.get('confidence')})"
-                    )
-                    match_result = {
-                        "candidate_id": matched_id,
-                        "canonical_title": matched_cand.get("canonical_title", ""),
-                        "status": matched_cand.get("status", ""),
-                        "source_titles": matched_cand.get("source_titles", []),
-                        "crawl_stats": self._get_crawl_stats(matched_id),
-                        "match_method": "llm",
-                        "confidence": result.get("confidence", 0.0),
-                        "reason": result.get("reason", ""),
-                    }
-
-            # 处理关键词（无论是否匹配都提取）
-            extra = result.get("extra_keywords", [])
-            if isinstance(extra, list):
-                for kw in extra[:2]:
-                    kw = str(kw).strip()
-                    if kw and kw != topic_title:
-                        keywords.append(kw)
-
-            logger.info(f"[TopicMatcher] 合并调用完成: match={match_result is not None}, keywords={keywords}")
-
-        except Exception as e:
-            logger.warning(f"[TopicMatcher] LLM 合并调用失败: {e}")
-            # LLM 失败降级
-            match_result = self._jieba_fallback(topic_title, shortlist)
-
-        return match_result, keywords
 
     # ── 辅助方法 ────────────────────────────────────────────────
 

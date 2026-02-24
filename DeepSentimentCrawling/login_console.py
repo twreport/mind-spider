@@ -878,16 +878,30 @@ async def create_task(request: Request, token: str = Query("")):
         platforms = sorted(_VALID_PLATFORMS)
 
     # --- 话题匹配（force=true 跳过）---
+    matched_candidate_id = None  # development 时关联已有 candidate
     if not force and _topic_matcher:
         try:
             match_result = _topic_matcher.match(topic_title)
             if match_result:
-                logger.info(f"[API] 话题匹配命中: {topic_title} -> {match_result.get('canonical_title')}")
-                return JSONResponse({
-                    "status": "matched",
-                    "message": "该话题已有深度采集数据",
-                    "match": match_result,
-                })
+                match_type = match_result.get("match_type", "duplicate")
+
+                if match_type == "duplicate":
+                    # 完全重复，返回已有数据
+                    logger.info(f"[API] 话题重复: {topic_title} -> {match_result.get('canonical_title')}")
+                    return JSONResponse({
+                        "status": "matched",
+                        "message": "该话题已有深度采集数据",
+                        "match": match_result,
+                    })
+
+                elif match_type == "development":
+                    # 事件进展，继续创建任务但关联已有 candidate
+                    matched_candidate_id = match_result.get("candidate_id")
+                    logger.info(
+                        f"[API] 事件进展: {topic_title} -> "
+                        f"{match_result.get('canonical_title')} (关联 {matched_candidate_id})"
+                    )
+                # else: different — 走正常新建流程
         except Exception as e:
             logger.warning(f"[API] 话题匹配异常，跳过: {e}")
 
@@ -920,7 +934,7 @@ async def create_task(request: Request, token: str = Query("")):
 
         task_doc = {
             "task_id": task_id,
-            "candidate_id": "user_api",
+            "candidate_id": matched_candidate_id or "user_api",
             "topic_title": topic_title,
             "platform": plat,
             "search_keywords": search_keywords,
