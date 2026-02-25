@@ -48,6 +48,7 @@ class TieBaCrawler(AbstractCrawler):
         self.user_agent = utils.get_user_agent()
         self._page_extractor = TieBaExtractor()
         self.cdp_manager = None
+        self._crawled_note_ids: set = set()
 
     async def start(self) -> None:
         """
@@ -201,8 +202,13 @@ class TieBaCrawler(AbstractCrawler):
                         f"[BaiduTieBaCrawler.search] Note list len: {len(notes_list)}"
                     )
                     await self.get_specified_notes(
-                        note_id_list=[note_detail.note_id for note_detail in notes_list]
+                        note_id_list=[
+                            note_detail.note_id for note_detail in notes_list
+                            if note_detail.note_id not in self._crawled_note_ids
+                        ]
                     )
+                    for note_detail in notes_list:
+                        self._crawled_note_ids.add(note_detail.note_id)
                     
                     # Sleep after page navigation
                     await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)

@@ -54,6 +54,7 @@ class ZhihuCrawler(AbstractCrawler):
         self.user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         self._extractor = ZhihuExtractor()
         self.cdp_manager = None
+        self._crawled_content_ids: set = set()
 
     async def start(self) -> None:
         """
@@ -178,10 +179,18 @@ class ZhihuCrawler(AbstractCrawler):
                     utils.logger.info(f"[ZhihuCrawler.search] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page-1}")
                     
                     page += 1
+                    new_contents = []
                     for content in content_list:
+                        if content.content_id in self._crawled_content_ids:
+                            utils.logger.info(
+                                f"[ZhihuCrawler.search] Skip duplicate content: {content.content_id}"
+                            )
+                            continue
+                        self._crawled_content_ids.add(content.content_id)
+                        new_contents.append(content)
                         await zhihu_store.update_zhihu_content(content)
 
-                    await self.batch_get_content_comments(content_list)
+                    await self.batch_get_content_comments(new_contents)
                 except (DataFetchError, RetryError) as e:
                     utils.logger.error(f"[ZhihuCrawler.search] Search content error: {e}")
                     return

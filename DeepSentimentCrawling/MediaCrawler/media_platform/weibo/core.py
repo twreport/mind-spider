@@ -54,6 +54,7 @@ class WeiboCrawler(AbstractCrawler):
         self.user_agent = utils.get_user_agent()
         self.mobile_user_agent = utils.get_mobile_user_agent()
         self.cdp_manager = None
+        self._crawled_note_ids: set = set()
 
     async def start(self):
         playwright_proxy_format, httpx_proxy_format = None, None
@@ -165,7 +166,12 @@ class WeiboCrawler(AbstractCrawler):
                     if note_item:
                         mblog: Dict = note_item.get("mblog")
                         if mblog:
-                            note_id_list.append(mblog.get("id"))
+                            note_id = mblog.get("id")
+                            if note_id in self._crawled_note_ids:
+                                utils.logger.info(f"[WeiboCrawler.search] Skip duplicate note: {note_id}")
+                                continue
+                            self._crawled_note_ids.add(note_id)
+                            note_id_list.append(note_id)
                             await weibo_store.update_weibo_note(note_item)
                             await self.get_note_images(mblog)
 

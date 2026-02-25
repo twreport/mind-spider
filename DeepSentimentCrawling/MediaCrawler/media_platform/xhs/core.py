@@ -51,6 +51,7 @@ class XiaoHongShuCrawler(AbstractCrawler):
         # self.user_agent = utils.get_user_agent()
         self.user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
         self.cdp_manager = None
+        self._crawled_note_ids: set = set()
 
     async def start(self) -> None:
         playwright_proxy_format, httpx_proxy_format = None, None
@@ -176,9 +177,14 @@ class XiaoHongShuCrawler(AbstractCrawler):
                     note_details = await asyncio.gather(*task_list)
                     for note_detail in note_details:
                         if note_detail:
+                            note_id = note_detail.get("note_id")
+                            if note_id in self._crawled_note_ids:
+                                utils.logger.info(f"[XiaoHongShuCrawler.search] Skip duplicate note: {note_id}")
+                                continue
+                            self._crawled_note_ids.add(note_id)
                             await xhs_store.update_xhs_note(note_detail)
                             await self.get_notice_media(note_detail)
-                            note_ids.append(note_detail.get("note_id"))
+                            note_ids.append(note_id)
                             xsec_tokens.append(note_detail.get("xsec_token"))
                     page += 1
                     utils.logger.info(f"[XiaoHongShuCrawler.search] Note details: {note_details}")

@@ -55,6 +55,7 @@ class BilibiliCrawler(AbstractCrawler):
         self.index_url = "https://www.bilibili.com"
         self.user_agent = utils.get_user_agent()
         self.cdp_manager = None
+        self._crawled_video_ids: set = set()
 
     async def start(self):
         playwright_proxy_format, httpx_proxy_format = None, None
@@ -212,7 +213,12 @@ class BilibiliCrawler(AbstractCrawler):
                 video_items = await asyncio.gather(*task_list)
                 for video_item in video_items:
                     if video_item:
-                        video_id_list.append(video_item.get("View").get("aid"))
+                        video_id = video_item.get("View").get("aid")
+                        if video_id in self._crawled_video_ids:
+                            utils.logger.info(f"[BilibiliCrawler.search_by_keywords] Skip duplicate video: {video_id}")
+                            continue
+                        self._crawled_video_ids.add(video_id)
+                        video_id_list.append(video_id)
                         await bilibili_store.update_bilibili_video(video_item)
                         await bilibili_store.update_up_info(video_item)
                         await self.get_bilibili_video(video_item, semaphore)

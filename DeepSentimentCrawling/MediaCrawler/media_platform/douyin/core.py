@@ -47,6 +47,7 @@ class DouYinCrawler(AbstractCrawler):
         self.index_url = "https://www.douyin.com"
         self.cdp_manager = None
         self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        self._crawled_aweme_ids: set = set()
 
     async def start(self) -> None:
         playwright_proxy_format, httpx_proxy_format = None, None
@@ -242,7 +243,8 @@ class DouYinCrawler(AbstractCrawler):
                         # Process intercepted items
                         for aweme_info in intercepted_items[:max_notes]:
                             aweme_id = aweme_info.get("aweme_id", "")
-                            if aweme_id and aweme_id not in aweme_list:
+                            if aweme_id and aweme_id not in self._crawled_aweme_ids:
+                                self._crawled_aweme_ids.add(aweme_id)
                                 aweme_list.append(aweme_id)
                                 await douyin_store.update_douyin_aweme(aweme_item=aweme_info)
                                 await self.get_aweme_media(aweme_item=aweme_info)
@@ -313,7 +315,8 @@ class DouYinCrawler(AbstractCrawler):
                 except TypeError:
                     continue
                 aweme_id = aweme_info.get("aweme_id", "")
-                if aweme_id and aweme_id not in aweme_list:
+                if aweme_id and aweme_id not in self._crawled_aweme_ids:
+                    self._crawled_aweme_ids.add(aweme_id)
                     aweme_list.append(aweme_id)
                     await douyin_store.update_douyin_aweme(aweme_item=aweme_info)
                     await self.get_aweme_media(aweme_item=aweme_info)

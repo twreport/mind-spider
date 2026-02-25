@@ -46,6 +46,7 @@ class KuaishouCrawler(AbstractCrawler):
         self.index_url = "https://www.kuaishou.com"
         self.user_agent = utils.get_user_agent()
         self.cdp_manager = None
+        self._crawled_video_ids: set = set()
 
     async def start(self):
         playwright_proxy_format, httpx_proxy_format = None, None
@@ -171,7 +172,12 @@ class KuaishouCrawler(AbstractCrawler):
                     continue
                 search_session_id = vision_search_photo.get("searchSessionId", "")
                 for video_detail in vision_search_photo.get("feeds"):
-                    video_id_list.append(video_detail.get("photo", {}).get("id"))
+                    video_id = video_detail.get("photo", {}).get("id")
+                    if video_id in self._crawled_video_ids:
+                        utils.logger.info(f"[KuaishouCrawler.search] Skip duplicate video: {video_id}")
+                        continue
+                    self._crawled_video_ids.add(video_id)
+                    video_id_list.append(video_id)
                     await kuaishou_store.update_kuaishou_video(video_item=video_detail)
 
                 # batch fetch video comments
