@@ -211,7 +211,7 @@ class TieBaCrawler(AbstractCrawler):
                         self._crawled_note_ids.add(note_detail.note_id)
                     
                     # Sleep after page navigation
-                    await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                    await utils.random_sleep()
                     utils.logger.info(f"[TieBaCrawler.search] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page}")
                     
                     page += 1
@@ -254,7 +254,7 @@ class TieBaCrawler(AbstractCrawler):
                 await self.get_specified_notes([note.note_id for note in note_list])
                 
                 # Sleep after processing notes
-                await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                await utils.random_sleep()
                 utils.logger.info(f"[TieBaCrawler.get_specified_tieba_notes] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after processing notes from page {page_number}")
                 
                 page_number += tieba_limit_count
@@ -303,7 +303,7 @@ class TieBaCrawler(AbstractCrawler):
                 note_detail: TiebaNote = await self.tieba_client.get_note_by_id(note_id)
                 
                 # Sleep after fetching note details
-                await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                await utils.random_sleep()
                 utils.logger.info(f"[TieBaCrawler.get_note_detail_async_task] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after fetching note details {note_id}")
                 
                 if not note_detail:
@@ -363,12 +363,12 @@ class TieBaCrawler(AbstractCrawler):
             )
             
             # Sleep before fetching comments
-            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+            await utils.random_sleep()
             utils.logger.info(f"[TieBaCrawler.get_comments_async_task] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds before fetching comments for note {note_detail.note_id}")
             
             await self.tieba_client.get_note_all_comments(
                 note_detail=note_detail,
-                crawl_interval=config.CRAWLER_MAX_SLEEP_SEC,
+                crawl_interval=utils.get_platform_sleep_sec(),
                 callback=tieba_store.batch_update_tieba_note_comments,
                 max_count=config.CRAWLER_MAX_COMMENTS_COUNT_SINGLENOTES,
             )
@@ -435,7 +435,7 @@ class TieBaCrawler(AbstractCrawler):
 
             # Step 2: 等待页面加载,使用配置文件中的延时设置
             utils.logger.info(f"[TieBaCrawler] Step 2: 等待 {config.CRAWLER_MAX_SLEEP_SEC}秒 模拟用户浏览...")
-            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+            await utils.random_sleep()
 
             # Step 3: 查找并点击"贴吧"链接
             utils.logger.info("[TieBaCrawler] Step 3: 查找并点击'贴吧'链接...")
@@ -495,7 +495,7 @@ class TieBaCrawler(AbstractCrawler):
 
             # Step 5: 等待页面稳定,使用配置文件中的延时设置
             utils.logger.info(f"[TieBaCrawler] Step 5: 页面加载完成,等待 {config.CRAWLER_MAX_SLEEP_SEC}秒...")
-            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+            await utils.random_sleep()
 
             current_url = self.context_page.url
             utils.logger.info(f"[TieBaCrawler] ✅ 成功通过百度首页进入贴吧! 当前URL: {current_url}")

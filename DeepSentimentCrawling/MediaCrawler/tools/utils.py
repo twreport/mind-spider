@@ -14,15 +14,37 @@ import asyncio
 import logging
 import random
 
+import config
 from .crawler_util import *
 from .slider_util import *
 from .time_util import *
 
 
-async def random_sleep(base_seconds: float = 2.0):
-    """随机延迟，范围为 [base, base * 2.5]，模拟人类行为"""
+async def random_sleep(base_seconds: float = None):
+    """
+    随机延迟，范围为 [base, base * 2.5]，模拟人类行为
+
+    如果未指定 base_seconds，则根据 config.PLATFORM 自动选择：
+    - 优先使用 PLATFORM_SLEEP_SEC[platform]
+    - 未配置的平台使用 CRAWLER_MAX_SLEEP_SEC
+    """
+    if base_seconds is None:
+        platform_sleep_map = getattr(config, 'PLATFORM_SLEEP_SEC', {})
+        base_seconds = platform_sleep_map.get(config.PLATFORM, config.CRAWLER_MAX_SLEEP_SEC)
+
     delay = random.uniform(base_seconds, base_seconds * 2.5)
     await asyncio.sleep(delay)
+
+
+def get_platform_sleep_sec() -> float:
+    """
+    获取当前平台的爬取间隔基础值
+
+    Returns:
+        平台对应的间隔秒数
+    """
+    platform_sleep_map = getattr(config, 'PLATFORM_SLEEP_SEC', {})
+    return platform_sleep_map.get(config.PLATFORM, config.CRAWLER_MAX_SLEEP_SEC)
 
 
 def init_loging_config():

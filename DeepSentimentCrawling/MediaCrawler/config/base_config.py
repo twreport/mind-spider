@@ -108,8 +108,20 @@ STOP_WORDS_FILE = "./docs/hit_stopwords.txt"
 # 中文字体文件路径
 FONT_PATH = "./docs/STZHONGS.TTF"
 
-# 爬取间隔时间
+# 爬取间隔时间（基础值，实际延迟为 [base, base*2.5]）
 CRAWLER_MAX_SLEEP_SEC = 2
+
+# 各平台爬取间隔（优先使用此配置，未配置的平台使用 CRAWLER_MAX_SLEEP_SEC）
+# 反爬严格的平台用较大值，避免被封
+PLATFORM_SLEEP_SEC = {
+    "xhs": 4,      # 小红书：反爬严格
+    "dy": 4,       # 抖音：反爬严格
+    "ks": 3,       # 快手：中等
+    "tieba": 3,    # 贴吧：中等
+    "bili": 2,     # B站：较宽松
+    "wb": 2,       # 微博：较宽松
+    "zhihu": 2,    # 知乎：较宽松
+}
 
 from .bilibili_config import *
 from .xhs_config import *
