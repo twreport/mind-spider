@@ -111,6 +111,14 @@ class CandidateManager:
         )
         self.thresholds = {**DEFAULT_CANDIDATE_THRESHOLDS, **(thresholds or {})}
 
+        # TopicMatcher 用于候选触发路径去重
+        try:
+            from DeepSentimentCrawling.topic_matcher import TopicMatcher
+            self.topic_matcher = TopicMatcher(mongo=self.signal_writer)
+        except Exception as e:
+            logger.warning(f"[Candidate] TopicMatcher 初始化失败，候选路径去重不可用: {e}")
+            self.topic_matcher = None
+
     def ensure_indexes(self) -> None:
         """创建 candidates collection 索引"""
         self.signal_writer.connect()
@@ -362,6 +370,26 @@ class CandidateManager:
         scale = _CRAWL_SCALE.get(status)
         if not scale:
             return
+
+        cand_id = candidate["candidate_id"]
+
+        # TopicMatcher 去重：检查是否与已有候选描述同一事件
+        if self.topic_matcher:
+            try:
+                match_result = self.topic_matcher.match(
+                    candidate["canonical_title"],
+                    exclude_candidate_id=cand_id,
+                )
+                if match_result and match_result.get("match_type") == "duplicate":
+                    logger.info(
+                        f"[Candidate] 候选去重跳过: {candidate['canonical_title'][:30]} "
+                        f"与已有 {match_result.get('canonical_title', '')[:30]} 重复 "
+                        f"(method={match_result.get('match_method')}, "
+                        f"confidence={match_result.get('confidence')})"
+                    )
+                    return
+            except Exception as e:
+                logger.warning(f"[Candidate] TopicMatcher 调用失败，继续创建任务: {e}")
 
         # 无论候选来自哪些表层平台，一律为所有 7 个深层爬取平台创建任务
         # 7 个深层爬取平台：wb, bili, dy, zhihu, ks, tieba, xhs
