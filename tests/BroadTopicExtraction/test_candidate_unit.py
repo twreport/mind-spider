@@ -181,7 +181,9 @@ def mock_mongo():
 
 @pytest.fixture
 def manager(mock_mongo):
-    return CandidateManager(signal_writer=mock_mongo)
+    mgr = CandidateManager(signal_writer=mock_mongo)
+    mgr.topic_matcher = None  # 禁用 topic_matcher 避免影响非去重测试
+    return mgr
 
 
 # ==================== score_pos 计算（真实数据结构） ====================
