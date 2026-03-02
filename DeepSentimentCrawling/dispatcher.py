@@ -93,7 +93,7 @@ class TaskDispatcher:
                     f"{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
                     f"?charset={settings.DB_CHARSET}"
                 )
-            self._mysql_engine = create_engine(url, future=True)
+            self._mysql_engine = create_engine(url, future=True, pool_recycle=3600, pool_pre_ping=True)
         return self._mysql_engine
 
     def _get_task_queue(self):
