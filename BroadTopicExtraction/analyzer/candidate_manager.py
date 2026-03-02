@@ -34,13 +34,6 @@ from ms_config import settings
 COLLECTION = "candidates"
 CRAWL_TASKS_COLLECTION = "crawl_tasks"
 
-# 表层采集平台名 → 深层采集平台代码
-_SURFACE_TO_DEEP = {
-    "weibo": "wb", "bilibili": "bili", "douyin": "dy",
-    "zhihu": "zhihu", "kuaishou": "ks", "tieba": "tieba",
-    "xiaohongshu": "xhs", "xhs": "xhs",
-}
-
 # 按候选状态定义爬取规模
 # 按候选状态定义爬取规模（只在进入对应状态时触发）
 # 目前只在 exploded 时触发，如需更早介入可取消注释：
@@ -370,15 +363,12 @@ class CandidateManager:
         if not scale:
             return
 
-        # 从候选的平台列表映射到深层采集平台代码
-        deep_platforms = []
-        for plat in candidate.get("platforms", []):
-            code = _SURFACE_TO_DEEP.get(plat)
-            if code and code not in deep_platforms:
-                deep_platforms.append(code)
+        # 无论候选来自哪些表层平台，一律为所有 7 个深层爬取平台创建任务
+        # 7 个深层爬取平台：wb, bili, dy, zhihu, ks, tieba, xhs
+        all_deep_platforms = ["wb", "bili", "dy", "zhihu", "ks", "tieba", "xhs"]
 
-        # 限制爬取平台数
-        deep_platforms = deep_platforms[:scale["platforms"]]
+        # 限制爬取平台数（按配置的 platforms 数量）
+        deep_platforms = all_deep_platforms[:scale["platforms"]]
         if not deep_platforms:
             return
 
