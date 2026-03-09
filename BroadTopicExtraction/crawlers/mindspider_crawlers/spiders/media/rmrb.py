@@ -49,15 +49,13 @@ class RmrbSpider(MediaSpider):
 
         # 2024.12.01 之后人民日报改版，URL 格式变化
         if date_int < 20241201:
-            base_url = f"http://paper.people.com.cn/rmrb/html/{self.year}-{self.month}/{self.day}/"
-            url = f"{base_url}nbs.D110000renmrb_01.htm"
+            url = f"http://paper.people.com.cn/rmrb/html/{self.year}-{self.month}/{self.day}/nbs.D110000renmrb_01.htm"
         else:
-            base_url = f"http://paper.people.com.cn/rmrb/pc/layout/{self.year}{self.month}/{self.day}/"
-            url = f"{base_url}node_01.html"
+            url = f"http://paper.people.com.cn/rmrb/pc/layout/{self.year}{self.month}/{self.day}/node_01.html"
 
         yield scrapy.Request(
             url,
-            meta={"date": self.date_str, "base_url": base_url},
+            meta={"date": self.date_str},
             callback=self.parse_index,
         )
 
@@ -73,14 +71,13 @@ class RmrbSpider(MediaSpider):
 
         swip_a = swips.find_all("a")
         for a in swip_a:
-            href = a.get("href", "").replace("./", "")
+            href = a.get("href", "")
             if href:
-                item_url = response.meta["base_url"] + href + "?t=1"
+                item_url = response.urljoin(href)
                 yield scrapy.Request(
                     item_url,
                     meta={
                         "date": response.meta["date"],
-                        "base_url": response.meta["base_url"],
                     },
                     callback=self.parse_page,
                 )
@@ -105,7 +102,7 @@ class RmrbSpider(MediaSpider):
                 continue
 
             news_title = news_title.replace(" ", "")
-            news_url = response.meta["base_url"] + news_a.get("href", "")
+            news_url = response.urljoin(news_a.get("href", ""))
 
             yield scrapy.Request(
                 news_url,
