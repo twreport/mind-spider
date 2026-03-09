@@ -40,9 +40,7 @@ app.add_middleware(
 )
 
 # stealth 脚本路径
-_STEALTH_JS = os.path.join(
-    os.path.dirname(__file__), "MediaCrawler", "libs", "stealth.min.js"
-)
+_STEALTH_JS = os.path.join(os.path.dirname(__file__), "MediaCrawler", "libs", "stealth.min.js")
 
 # 全局状态
 _cookie_manager: Optional[CookieManager] = None
@@ -148,7 +146,9 @@ async def dashboard(token: str = Query("")):
             "missing": "color: gray;",
         }.get(s["status"], "")
 
-        saved_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(s["saved_at"])) if s["saved_at"] else "-"
+        saved_str = (
+            time.strftime("%Y-%m-%d %H:%M", time.localtime(s["saved_at"])) if s["saved_at"] else "-"
+        )
         platform_name = _PLATFORM_LOGIN.get(s["platform"], {}).get("name", s["platform"])
         login_link = f"/login/{s['platform']}?token={token}"
 
@@ -180,6 +180,7 @@ async def dashboard(token: str = Query("")):
     <body>
         <h1>MindSpider 登录控制台</h1>
         <p>管理各平台 cookie 状态，点击"扫码登录"更新过期 cookie。</p>
+        <p style="margin-top:10px;"><a href="/dashboard?token={token}" style="color:#1890ff; font-weight:600;">监控面板 →</a></p>
         <table>
             <tr><th>平台</th><th>状态</th><th>保存时间</th><th>操作</th></tr>
             {rows}
@@ -443,12 +444,14 @@ async def get_qr(platform: str, token: str = Query("")):
         elif platform == "ks":
             # 注入额外反检测脚本
             try:
-                await page.evaluate("""() => {
+                await page.evaluate(
+                    """() => {
                     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
                     window.navigator.chrome = { runtime: {} };
                     Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
                     Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en'] });
-                }""")
+                }"""
+                )
             except Exception:
                 pass
 
@@ -520,7 +523,7 @@ async def get_qr(platform: str, token: str = Query("")):
                 'a[href="http://tieba.baidu.com/"]',
                 'a[href="https://tieba.baidu.com/"]',
                 'a.mnav:has-text("贴吧")',
-                'text=贴吧',
+                "text=贴吧",
             ]
             for sel in tieba_selectors:
                 try:
@@ -546,16 +549,20 @@ async def get_qr(platform: str, token: str = Query("")):
 
             if not tieba_clicked:
                 logger.warning("[LoginConsole] tieba 无法从百度首页跳转，直接访问 tieba.baidu.com")
-                await page.goto("https://tieba.baidu.com", wait_until="domcontentloaded", timeout=30000)
+                await page.goto(
+                    "https://tieba.baidu.com", wait_until="domcontentloaded", timeout=30000
+                )
 
             await page.wait_for_timeout(3000)
 
             # 注入反检测脚本（贴吧额外需要）
             try:
-                await page.evaluate("""() => {
+                await page.evaluate(
+                    """() => {
                     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
                     window.navigator.chrome = { runtime: {} };
-                }""")
+                }"""
+                )
             except Exception:
                 pass
 
@@ -646,7 +653,9 @@ async def confirm_login(platform: str, token: str = Query("")):
         # 获取 cookies
         cookies = await context.cookies()
         cookie_dict = {c["name"]: c["value"] for c in cookies}
-        logger.info(f"[LoginConsole] {platform} 确认后 cookie 数量: {len(cookie_dict)}，名称: {sorted(cookie_dict.keys())}")
+        logger.info(
+            f"[LoginConsole] {platform} 确认后 cookie 数量: {len(cookie_dict)}，名称: {sorted(cookie_dict.keys())}"
+        )
 
         # 检查登录状态
         session_key = session["session_key"]
@@ -681,10 +690,17 @@ async def confirm_login(platform: str, token: str = Query("")):
             await context.close()
             del _active_sessions[platform]
 
-            logger.info(f"[LoginConsole] {platform} 确认登录成功，已保存 {len(cookie_dict)} 个 cookie")
+            logger.info(
+                f"[LoginConsole] {platform} 确认登录成功，已保存 {len(cookie_dict)} 个 cookie"
+            )
             return JSONResponse({"status": "success"})
         else:
-            return JSONResponse({"status": "error", "message": f"未检测到登录 cookie ({session_key})，请确认手机上已完成登录"})
+            return JSONResponse(
+                {
+                    "status": "error",
+                    "message": f"未检测到登录 cookie ({session_key})，请确认手机上已完成登录",
+                }
+            )
 
     except Exception as e:
         logger.error(f"[LoginConsole] {platform} 确认检测异常: {e}")
@@ -719,7 +735,9 @@ async def paste_cookies(platform: str, request: Request, token: str = Query(""))
         # 检查关键 session cookie 是否存在
         session_key = _PLATFORM_LOGIN[platform]["session_key"]
         if session_key not in cookie_dict:
-            logger.warning(f"[LoginConsole] {platform} 粘贴的 Cookie 中缺少 {session_key}，仍然保存")
+            logger.warning(
+                f"[LoginConsole] {platform} 粘贴的 Cookie 中缺少 {session_key}，仍然保存"
+            )
 
         # 保存
         if _cookie_manager:
@@ -798,7 +816,9 @@ async def poll_login(platform: str, token: str = Query("")):
                 page = session.get("page")
                 if page:
                     try:
-                        await page.goto("https://www.douyin.com", wait_until="domcontentloaded", timeout=15000)
+                        await page.goto(
+                            "https://www.douyin.com", wait_until="domcontentloaded", timeout=15000
+                        )
                         await page.wait_for_timeout(3000)
                         # 重新获取 cookies
                         cookies = await context.cookies()
@@ -823,7 +843,9 @@ async def poll_login(platform: str, token: str = Query("")):
         # 调试日志
         elapsed = int(time.time() - session["started_at"])
         cookie_names = sorted(cookie_dict.keys())
-        logger.debug(f"[LoginConsole] {platform} 轮询中 ({elapsed}s)，{len(cookie_dict)} cookie: {cookie_names}")
+        logger.debug(
+            f"[LoginConsole] {platform} 轮询中 ({elapsed}s)，{len(cookie_dict)} cookie: {cookie_names}"
+        )
 
         # 检查超时（5 分钟）
         if elapsed > 300:
@@ -887,12 +909,16 @@ async def create_task(request: Request, token: str = Query("")):
 
                 if match_type == "duplicate":
                     # 完全重复，返回已有数据
-                    logger.info(f"[API] 话题重复: {topic_title} -> {match_result.get('canonical_title')}")
-                    return JSONResponse({
-                        "status": "matched",
-                        "message": "该话题已有深度采集数据",
-                        "match": match_result,
-                    })
+                    logger.info(
+                        f"[API] 话题重复: {topic_title} -> {match_result.get('canonical_title')}"
+                    )
+                    return JSONResponse(
+                        {
+                            "status": "matched",
+                            "message": "该话题已有深度采集数据",
+                            "match": match_result,
+                        }
+                    )
 
                 elif match_type == "development":
                     # 事件进展，继续创建任务但关联已有 candidate
@@ -906,9 +932,7 @@ async def create_task(request: Request, token: str = Query("")):
             logger.warning(f"[API] 话题匹配异常，跳过: {e}")
 
     # --- 关键词处理 ---
-    user_provided_keywords = (
-        isinstance(search_keywords, list) and len(search_keywords) > 0
-    )
+    user_provided_keywords = isinstance(search_keywords, list) and len(search_keywords) > 0
     if not user_provided_keywords:
         # 用户没传 search_keywords，尝试 LLM 扩展
         if _topic_matcher:
@@ -956,6 +980,7 @@ async def create_task(request: Request, token: str = Query("")):
         # 推 Redis
         try:
             from DeepSentimentCrawling.task_queue import get_task_queue
+
             queue = get_task_queue()
             queue.push_user_task(task_doc)
         except Exception as e:
@@ -970,12 +995,14 @@ async def create_task(request: Request, token: str = Query("")):
         f"[API] 用户任务已创建: {len(task_ids)} 个, "
         f"platforms={platforms} keywords={search_keywords}"
     )
-    return JSONResponse({
-        "task_ids": task_ids,
-        "count": len(task_ids),
-        "status": "ok",
-        "search_keywords": search_keywords,
-    })
+    return JSONResponse(
+        {
+            "task_ids": task_ids,
+            "count": len(task_ids),
+            "status": "ok",
+            "search_keywords": search_keywords,
+        }
+    )
 
 
 @app.get("/api/tasks")
@@ -1002,11 +1029,7 @@ async def list_tasks(
     if status:
         query["status"] = status
 
-    docs = list(
-        col.find(query, {"_id": 0})
-        .sort([("created_at", -1)])
-        .limit(limit)
-    )
+    docs = list(col.find(query, {"_id": 0}).sort([("created_at", -1)]).limit(limit))
     content = json.loads(json.dumps(docs, ensure_ascii=False, default=str))
     return JSONResponse({"total": len(content), "tasks": content})
 
@@ -1058,6 +1081,7 @@ async def cancel_task(task_id: str, token: str = Query("")):
     # 尝试从 Redis 队列移除
     try:
         from DeepSentimentCrawling.task_queue import get_task_queue
+
         queue = get_task_queue()
         queue.remove_task(task_id, prefix="user")
     except Exception as e:

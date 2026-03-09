@@ -29,7 +29,13 @@ if _PROJECT_ROOT not in sys.path:
 from ms_config import settings
 from DeepSentimentCrawling.cookie_manager import CookieManager
 from DeepSentimentCrawling.dispatcher import TaskDispatcher
-from DeepSentimentCrawling.login_console import app as login_app, init_cookie_manager, init_mongo_writer, init_topic_matcher, cleanup as console_cleanup
+from DeepSentimentCrawling.login_console import (
+    app as login_app,
+    init_cookie_manager,
+    init_mongo_writer,
+    init_topic_matcher,
+    cleanup as console_cleanup,
+)
 
 LOG_DIR = Path(__file__).parent.parent / "logs"
 
@@ -70,16 +76,19 @@ def setup_logging(level: str = "INFO"):
 def parse_args():
     parser = argparse.ArgumentParser(description="MindSpider 深层采集服务")
     parser.add_argument(
-        "--port", type=int, default=None,
-        help=f"登录控制台端口 (默认: {settings.LOGIN_CONSOLE_PORT})"
+        "--port",
+        type=int,
+        default=None,
+        help=f"登录控制台端口 (默认: {settings.LOGIN_CONSOLE_PORT})",
     )
     parser.add_argument(
-        "--platforms", type=str, default=None,
-        help="限制平台（逗号分隔），例如: xhs,dy,bili (默认: 全部7平台)"
+        "--platforms",
+        type=str,
+        default=None,
+        help="限制平台（逗号分隔），例如: xhs,dy,bili (默认: 全部7平台)",
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
-        help="试运行模式：只打印任务，不实际执行爬取"
+        "--dry-run", action="store_true", help="试运行模式：只打印任务，不实际执行爬取"
     )
     return parser.parse_args()
 
@@ -119,8 +128,19 @@ async def main():
 
     # 初始化话题匹配器
     from DeepSentimentCrawling.topic_matcher import TopicMatcher
+
     topic_matcher = TopicMatcher(mongo=dispatcher.mongo)
     init_topic_matcher(topic_matcher)
+
+    # 挂载深层采集监控面板
+    from DeepSentimentCrawling.admin import api as dashboard_api
+
+    dashboard_api.init(
+        mongo=dispatcher.mongo,
+        cookie_manager=cookie_manager,
+        dispatcher=dispatcher,
+    )
+    login_app.include_router(dashboard_api.router)
 
     # 启动登录控制台（后台线程）
     console_thread = threading.Thread(

@@ -89,12 +89,23 @@ def get_dashboard_html(token: str = "") -> str:
 </head>
 <body>
     <div class="header">
-        <h1>MindSpider 浅层采集监控</h1>
+        <div>
+            <h1>MindSpider 浅层采集监控</h1>
+            <div style="margin-top: 6px; font-size: 13px;">
+                <a href="javascript:void(0)" id="deep-dashboard-link" style="color:#1890ff; text-decoration:none;">深层面板 →</a>
+            </div>
+        </div>
         <div class="header-right">
             <span id="last-updated"></span>
             <label><input type="checkbox" id="auto-refresh" checked> 60s 自动刷新</label>
         </div>
     </div>
+
+    <script>
+        // 设置深层面板链接
+        document.getElementById('deep-dashboard-link').href =
+            'http://' + window.location.hostname + ':8777/dashboard/?' + '{token_param}';
+    </script>
 
     <!-- 摘要卡片 -->
     <div class="summary" id="summary-cards">
