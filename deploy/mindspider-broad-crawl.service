@@ -1,0 +1,18 @@
+[Unit]
+Description=MindSpider Broad Crawl Scheduler (浅层爬取)
+After=network.target mysql.service mongodb.service
+Wants=mysql.service mongodb.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/deploy/parallel-universe/mind-spider
+Environment="PATH=/root/anaconda3/envs/mind-spider/bin:/root/anaconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/root/anaconda3/envs/mind-spider/bin/python BroadTopicExtraction/start_scheduler.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/deploy/parallel-universe/mind-spider/logs/broad_crawl.log
+StandardError=append:/deploy/parallel-universe/mind-spider/logs/broad_crawl.log
+
+[Install]
+WantedBy=multi-user.target

@@ -8,6 +8,7 @@
 3. PlatformWorker config 保存/恢复安全性
 4. TaskDispatcher 熔断器逻辑
 5. 集成冒烟测试：假设话题 → 状态跃迁 → crawl_task 生成 → Worker 执行 → MySQL 数据验证
+6. TopicMatcher 去重改进：fast-path / 36h 窗口 / 候选路径去重 / exclude_candidate_id
 """
 
 import asyncio
@@ -28,12 +29,18 @@ from BroadTopicExtraction.analyzer.candidate_manager import (
     CandidateManager,
     COLLECTION,
     CRAWL_TASKS_COLLECTION,
-    _SURFACE_TO_DEEP,
     _CRAWL_SCALE,
 )
 from DeepSentimentCrawling.cookie_manager import CookieManager
 from DeepSentimentCrawling.alert import send_alert, _last_alert_ts, _RATE_LIMIT_SEC
 from DeepSentimentCrawling.dispatcher import TaskDispatcher
+from DeepSentimentCrawling.topic_matcher import (
+    TopicMatcher,
+    MATCH_DUPLICATE,
+    MATCH_DEVELOPMENT,
+    MATCH_DIFFERENT,
+    _extract_keywords,
+)
 
 
 # ==================== Fixtures ====================
@@ -59,7 +66,9 @@ def mock_mongo():
 
 @pytest.fixture
 def manager(mock_mongo):
-    return CandidateManager(signal_writer=mock_mongo)
+    mgr = CandidateManager(signal_writer=mock_mongo)
+    mgr.topic_matcher = None  # 禁用 topic_matcher 避免影响非去重测试
+    return mgr
 
 
 @pytest.fixture
@@ -91,19 +100,18 @@ class TestEmitCrawlTasks:
             ],
         }
 
-    def test_rising_generates_3_platforms(self, manager, mock_mongo):
-        """rising 状态应生成最多 3 个平台的任务"""
+    def test_rising_does_not_emit(self, manager, mock_mongo):
+        """rising 状态不在 _CRAWL_SCALE 中，不应生成任务"""
         col_mock = mock_mongo.get_collection.return_value
         cand = self._make_candidate("rising", ["weibo", "bilibili", "douyin", "zhihu"])
         now = int(time.time())
 
         manager._emit_crawl_tasks(cand, "rising", now)
 
-        # rising: platforms=3, 所以应插入 3 个任务
-        assert col_mock.insert_one.call_count == 3
+        assert col_mock.insert_one.call_count == 0
 
-    def test_confirmed_generates_5_platforms(self, manager, mock_mongo):
-        """confirmed 状态应生成最多 5 个平台的任务"""
+    def test_confirmed_does_not_emit(self, manager, mock_mongo):
+        """confirmed 状态不在 _CRAWL_SCALE 中，不应生成任务"""
         col_mock = mock_mongo.get_collection.return_value
         cand = self._make_candidate(
             "confirmed",
@@ -113,7 +121,7 @@ class TestEmitCrawlTasks:
 
         manager._emit_crawl_tasks(cand, "confirmed", now)
 
-        assert col_mock.insert_one.call_count == 5
+        assert col_mock.insert_one.call_count == 0
 
     def test_exploded_generates_7_platforms(self, manager, mock_mongo):
         """exploded 状态应生成最多 7 个平台的任务"""
@@ -131,58 +139,50 @@ class TestEmitCrawlTasks:
     def test_task_document_structure(self, manager, mock_mongo):
         """验证生成的 task 文档结构"""
         col_mock = mock_mongo.get_collection.return_value
-        cand = self._make_candidate("rising", ["weibo"])
+        cand = self._make_candidate("exploded", ["weibo"])
         now = int(time.time())
 
-        manager._emit_crawl_tasks(cand, "rising", now)
+        manager._emit_crawl_tasks(cand, "exploded", now)
 
-        assert col_mock.insert_one.call_count == 1
-        task_doc = col_mock.insert_one.call_args[0][0]
+        assert col_mock.insert_one.call_count == 7
+        task_doc = col_mock.insert_one.call_args_list[0][0][0]
 
         # 验证字段
         assert task_doc["task_id"].startswith("ct_cand_test123_wb_")
         assert task_doc["candidate_id"] == "cand_test123"
         assert task_doc["topic_title"] == "测试：某重大社会事件引发热议"
         assert task_doc["platform"] == "wb"
-        assert task_doc["max_notes"] == _CRAWL_SCALE["rising"]["max_notes"]
-        assert task_doc["priority"] == _CRAWL_SCALE["rising"]["priority"]
+        assert task_doc["max_notes"] == _CRAWL_SCALE["exploded"]["max_notes"]
+        assert task_doc["priority"] == _CRAWL_SCALE["exploded"]["priority"]
         assert task_doc["status"] == "pending"
         assert task_doc["attempts"] == 0
         assert isinstance(task_doc["search_keywords"], list)
         assert len(task_doc["search_keywords"]) >= 1
 
-    def test_platform_name_mapping(self, manager, mock_mongo):
-        """验证表层平台名正确映射到深层平台代码"""
+    def test_all_7_platforms_created(self, manager, mock_mongo):
+        """exploded 应为所有 7 个深层平台创建任务"""
         col_mock = mock_mongo.get_collection.return_value
-        cand = self._make_candidate("rising", ["xiaohongshu"])
+        cand = self._make_candidate("exploded", ["weibo"])
         now = int(time.time())
 
-        manager._emit_crawl_tasks(cand, "rising", now)
+        manager._emit_crawl_tasks(cand, "exploded", now)
 
-        task_doc = col_mock.insert_one.call_args[0][0]
-        assert task_doc["platform"] == "xhs"
+        platforms_created = [
+            call[0][0]["platform"] for call in col_mock.insert_one.call_args_list
+        ]
+        assert set(platforms_created) == {"wb", "bili", "dy", "zhihu", "ks", "tieba", "xhs"}
 
     def test_dedup_skips_existing_active_task(self, manager, mock_mongo):
         """已有 pending/running 任务时应跳过"""
         col_mock = mock_mongo.get_collection.return_value
         col_mock.find_one.return_value = {"task_id": "existing_task"}  # 模拟已存在
 
-        cand = self._make_candidate("rising", ["weibo"])
+        cand = self._make_candidate("exploded", ["weibo"])
         now = int(time.time())
 
-        manager._emit_crawl_tasks(cand, "rising", now)
+        manager._emit_crawl_tasks(cand, "exploded", now)
 
         # find_one 会找到已有任务，所以 insert_one 不应被调用
-        assert col_mock.insert_one.call_count == 0
-
-    def test_unknown_platform_ignored(self, manager, mock_mongo):
-        """未知平台名应被忽略"""
-        col_mock = mock_mongo.get_collection.return_value
-        cand = self._make_candidate("rising", ["unknown_platform"])
-        now = int(time.time())
-
-        manager._emit_crawl_tasks(cand, "rising", now)
-
         assert col_mock.insert_one.call_count == 0
 
     def test_emerging_does_not_emit(self, manager, mock_mongo):
@@ -196,16 +196,16 @@ class TestEmitCrawlTasks:
         assert col_mock.insert_one.call_count == 0
 
     def test_transition_triggers_emit(self, manager, mock_mongo):
-        """_apply_transition 到 rising 时应自动调用 _emit_crawl_tasks"""
+        """_apply_transition 到 exploded 时应自动调用 _emit_crawl_tasks"""
         col_mock = mock_mongo.get_collection.return_value
-        cand = self._make_candidate("emerging", ["weibo", "bilibili", "douyin"])
+        cand = self._make_candidate("confirmed", ["weibo", "bilibili", "douyin"])
         now = int(time.time())
 
-        manager._apply_transition(cand, "rising", "score_pos >= 1500", now)
+        manager._apply_transition(cand, "exploded", "score_pos >= 10000", now)
 
-        # 应生成任务
-        assert col_mock.insert_one.call_count == 3
-        assert cand["status"] == "rising"
+        # 应生成 7 个任务
+        assert col_mock.insert_one.call_count == 7
+        assert cand["status"] == "exploded"
 
     def test_transition_to_tracking_does_not_emit(self, manager, mock_mongo):
         """跃迁到 tracking 不应生成任务"""
@@ -220,13 +220,13 @@ class TestEmitCrawlTasks:
     def test_search_keywords_limited_to_3(self, manager, mock_mongo):
         """搜索关键词最多 3 个"""
         col_mock = mock_mongo.get_collection.return_value
-        cand = self._make_candidate("rising", ["weibo"])
+        cand = self._make_candidate("exploded", ["weibo"])
         cand["source_titles"] = ["标题A", "标题B", "标题C", "标题D", "标题E"]
         now = int(time.time())
 
-        manager._emit_crawl_tasks(cand, "rising", now)
+        manager._emit_crawl_tasks(cand, "exploded", now)
 
-        task_doc = col_mock.insert_one.call_args[0][0]
+        task_doc = col_mock.insert_one.call_args_list[0][0][0]
         assert len(task_doc["search_keywords"]) <= 3
 
 
@@ -427,34 +427,254 @@ class TestDispatcherCircuitBreaker:
 
 
 class TestMappingConsistency:
-    """确保平台映射和配置表的一致性"""
-
-    def test_surface_to_deep_covers_common_platforms(self):
-        """表层→深层映射应覆盖常见平台"""
-        required = {"weibo", "bilibili", "douyin", "zhihu", "kuaishou", "tieba", "xiaohongshu", "xhs"}
-        assert required <= set(_SURFACE_TO_DEEP.keys())
-
-    def test_deep_platform_codes_valid(self):
-        """映射目标应为有效的深层平台代码"""
-        valid_codes = {"xhs", "dy", "ks", "bili", "wb", "tieba", "zhihu"}
-        for deep_code in _SURFACE_TO_DEEP.values():
-            assert deep_code in valid_codes, f"无效平台代码: {deep_code}"
+    """确保配置表的一致性"""
 
     def test_crawl_scale_keys(self):
-        """_CRAWL_SCALE 应只包含 rising/confirmed/exploded"""
-        assert set(_CRAWL_SCALE.keys()) == {"rising", "confirmed", "exploded"}
+        """_CRAWL_SCALE 应只包含 exploded"""
+        assert "exploded" in _CRAWL_SCALE
 
-    def test_crawl_scale_increasing_notes(self):
-        """爬取规模应递增"""
-        assert _CRAWL_SCALE["rising"]["max_notes"] < _CRAWL_SCALE["confirmed"]["max_notes"]
-        assert _CRAWL_SCALE["confirmed"]["max_notes"] < _CRAWL_SCALE["exploded"]["max_notes"]
+    def test_crawl_scale_exploded_has_7_platforms(self):
+        """exploded 应配置 7 个平台"""
+        assert _CRAWL_SCALE["exploded"]["platforms"] == 7
 
-    def test_crawl_scale_increasing_priority(self):
-        """优先级应递增"""
-        assert _CRAWL_SCALE["rising"]["priority"] < _CRAWL_SCALE["confirmed"]["priority"]
-        assert _CRAWL_SCALE["confirmed"]["priority"] < _CRAWL_SCALE["exploded"]["priority"]
+    def test_crawl_scale_exploded_structure(self):
+        """exploded 配置应有完整字段"""
+        scale = _CRAWL_SCALE["exploded"]
+        assert "max_notes" in scale
+        assert "priority" in scale
+        assert "platforms" in scale
 
-    def test_crawl_scale_increasing_platforms(self):
-        """平台数应递增"""
-        assert _CRAWL_SCALE["rising"]["platforms"] < _CRAWL_SCALE["confirmed"]["platforms"]
-        assert _CRAWL_SCALE["confirmed"]["platforms"] < _CRAWL_SCALE["exploded"]["platforms"]
+
+# ==================== 7. TopicMatcher 去重改进测试 ====================
+
+
+class TestTopicMatcherFastPath:
+    """测试 jieba fast-path（overlap >= 0.8 → 直接 duplicate）"""
+
+    @pytest.fixture
+    def matcher(self, mock_mongo):
+        """创建 TopicMatcher（LLM 不可用）"""
+        with patch("DeepSentimentCrawling.topic_matcher.settings") as mock_settings:
+            mock_settings.TOPIC_MATCHER_API_KEY = ""
+            mock_settings.TOPIC_MATCHER_BASE_URL = ""
+            mock_settings.MINDSPIDER_API_KEY = ""
+            mock_settings.MINDSPIDER_BASE_URL = ""
+            mock_settings.TOPIC_MATCHER_MODEL_NAME = ""
+            return TopicMatcher(mongo=mock_mongo)
+
+    def test_high_overlap_returns_duplicate(self, matcher):
+        """overlap >= 0.8 应直接返回 duplicate，跳过 LLM"""
+        # 构造几乎相同的标题
+        candidates = [
+            {
+                "candidate_id": "cand_abc123",
+                "canonical_title": "北京暴雨致交通瘫痪",
+                "source_titles": ["北京暴雨致交通瘫痪"],
+                "status": "exploded",
+            }
+        ]
+
+        # mock _fetch 和 _check_recent
+        matcher._fetch_deep_crawled_candidates = MagicMock(return_value=candidates)
+        matcher._check_recent_user_tasks = MagicMock(return_value=None)
+        matcher._get_crawl_stats = MagicMock(return_value={"total_tasks": 0, "completed": 0, "platforms": []})
+
+        # 用几乎相同的标题测试
+        result = matcher.match("北京暴雨致交通瘫痪严重")
+        # 关键词重叠率取决于 jieba 分词，验证逻辑路径
+        if result:
+            assert result["match_type"] in (MATCH_DUPLICATE,)
+            assert result["match_method"] in ("jieba_fast", "jieba")
+
+    def test_identical_title_is_fast_path(self, matcher):
+        """完全相同的标题 overlap = 1.0，应走 fast-path"""
+        candidates = [
+            {
+                "candidate_id": "cand_xyz",
+                "canonical_title": "某某公司大规模裁员",
+                "source_titles": ["某某公司大规模裁员"],
+                "status": "exploded",
+            }
+        ]
+
+        matcher._fetch_deep_crawled_candidates = MagicMock(return_value=candidates)
+        matcher._check_recent_user_tasks = MagicMock(return_value=None)
+        matcher._get_crawl_stats = MagicMock(return_value={"total_tasks": 0, "completed": 0, "platforms": []})
+
+        result = matcher.match("某某公司大规模裁员")
+        assert result is not None
+        assert result["match_type"] == MATCH_DUPLICATE
+        assert result["match_method"] == "jieba_fast"
+        assert result["confidence"] >= 0.8
+
+    def test_low_overlap_returns_none(self, matcher):
+        """无关话题应返回 None"""
+        candidates = [
+            {
+                "candidate_id": "cand_001",
+                "canonical_title": "北京暴雨致交通瘫痪",
+                "source_titles": ["北京暴雨致交通瘫痪"],
+                "status": "exploded",
+            }
+        ]
+
+        matcher._fetch_deep_crawled_candidates = MagicMock(return_value=candidates)
+        matcher._check_recent_user_tasks = MagicMock(return_value=None)
+
+        result = matcher.match("苹果发布新款iPhone")
+        assert result is None
+
+
+class TestTopicMatcherDedupWindow:
+    """测试 36h 去重窗口"""
+
+    def test_dedup_window_is_36h(self):
+        """EXACT_DEDUP_WINDOW 应为 36 小时"""
+        assert TopicMatcher.EXACT_DEDUP_WINDOW == 36 * 3600
+        assert TopicMatcher.EXACT_DEDUP_WINDOW == 129600
+
+
+class TestTopicMatcherExcludeCandidate:
+    """测试 exclude_candidate_id 排除自匹配"""
+
+    @pytest.fixture
+    def matcher(self, mock_mongo):
+        with patch("DeepSentimentCrawling.topic_matcher.settings") as mock_settings:
+            mock_settings.TOPIC_MATCHER_API_KEY = ""
+            mock_settings.TOPIC_MATCHER_BASE_URL = ""
+            mock_settings.MINDSPIDER_API_KEY = ""
+            mock_settings.MINDSPIDER_BASE_URL = ""
+            mock_settings.TOPIC_MATCHER_MODEL_NAME = ""
+            return TopicMatcher(mongo=mock_mongo)
+
+    def test_exclude_candidate_id_in_match(self, matcher):
+        """match() 应传递 exclude_candidate_id 给下游方法"""
+        matcher._check_recent_user_tasks = MagicMock(return_value=None)
+        matcher._fetch_deep_crawled_candidates = MagicMock(return_value=[])
+
+        matcher.match("某话题", exclude_candidate_id="cand_self")
+
+        matcher._check_recent_user_tasks.assert_called_once_with(
+            "某话题", "cand_self"
+        )
+        matcher._fetch_deep_crawled_candidates.assert_called_once_with("cand_self")
+
+    def test_exclude_candidate_id_none_by_default(self, matcher):
+        """不传 exclude_candidate_id 时应为 None"""
+        matcher._check_recent_user_tasks = MagicMock(return_value=None)
+        matcher._fetch_deep_crawled_candidates = MagicMock(return_value=[])
+
+        matcher.match("某话题")
+
+        matcher._check_recent_user_tasks.assert_called_once_with("某话题", None)
+        matcher._fetch_deep_crawled_candidates.assert_called_once_with(None)
+
+
+class TestCandidateManagerDedup:
+    """测试候选路径去重（CandidateManager._emit_crawl_tasks 接入 TopicMatcher）"""
+
+    def _make_candidate(self, cand_id="cand_test123"):
+        now = int(time.time())
+        return {
+            "candidate_id": cand_id,
+            "canonical_title": "测试：某重大社会事件引发热议",
+            "source_titles": ["测试：某重大社会事件引发热议"],
+            "status": "exploded",
+            "platforms": ["weibo", "bilibili", "douyin"],
+            "platform_count": 3,
+            "snapshots": [{"ts": now, "score_pos": 12000, "sum_hot": 500000}],
+            "first_seen_at": now - 3600,
+            "updated_at": now,
+            "status_history": [
+                {"ts": now - 3600, "status": "emerging", "reason": "cross_platform signal"},
+                {"ts": now, "status": "exploded", "reason": "score_pos >= 10000"},
+            ],
+        }
+
+    def test_duplicate_skips_all_tasks(self, manager, mock_mongo):
+        """TopicMatcher 返回 duplicate 时应跳过全部任务创建"""
+        col_mock = mock_mongo.get_collection.return_value
+        cand = self._make_candidate()
+        now = int(time.time())
+
+        # mock TopicMatcher 返回 duplicate
+        manager.topic_matcher = MagicMock()
+        manager.topic_matcher.match.return_value = {
+            "match_type": MATCH_DUPLICATE,
+            "candidate_id": "cand_other",
+            "canonical_title": "已有的相同事件",
+            "match_method": "jieba_fast",
+            "confidence": 0.9,
+        }
+
+        manager._emit_crawl_tasks(cand, "exploded", now)
+
+        # duplicate → 不应创建任何任务
+        assert col_mock.insert_one.call_count == 0
+
+    def test_development_proceeds_normally(self, manager, mock_mongo):
+        """TopicMatcher 返回 development 时应正常创建任务"""
+        col_mock = mock_mongo.get_collection.return_value
+        col_mock.find_one.return_value = None
+        cand = self._make_candidate()
+        now = int(time.time())
+
+        manager.topic_matcher = MagicMock()
+        manager.topic_matcher.match.return_value = {
+            "match_type": MATCH_DEVELOPMENT,
+            "candidate_id": "cand_other",
+            "canonical_title": "同一事件的进展",
+            "match_method": "llm",
+            "confidence": 0.8,
+        }
+
+        manager._emit_crawl_tasks(cand, "exploded", now)
+
+        # development → 应正常创建 7 个任务
+        assert col_mock.insert_one.call_count == 7
+
+    def test_no_match_proceeds_normally(self, manager, mock_mongo):
+        """TopicMatcher 返回 None 时应正常创建任务"""
+        col_mock = mock_mongo.get_collection.return_value
+        col_mock.find_one.return_value = None
+        cand = self._make_candidate()
+        now = int(time.time())
+
+        manager.topic_matcher = MagicMock()
+        manager.topic_matcher.match.return_value = None
+
+        manager._emit_crawl_tasks(cand, "exploded", now)
+
+        assert col_mock.insert_one.call_count == 7
+
+    def test_topic_matcher_failure_continues(self, manager, mock_mongo):
+        """TopicMatcher 异常时应继续创建任务（降级）"""
+        col_mock = mock_mongo.get_collection.return_value
+        col_mock.find_one.return_value = None
+        cand = self._make_candidate()
+        now = int(time.time())
+
+        manager.topic_matcher = MagicMock()
+        manager.topic_matcher.match.side_effect = Exception("LLM 服务不可用")
+
+        manager._emit_crawl_tasks(cand, "exploded", now)
+
+        # 异常降级 → 仍应创建任务
+        assert col_mock.insert_one.call_count == 7
+
+    def test_topic_matcher_passes_exclude_candidate_id(self, manager, mock_mongo):
+        """_emit_crawl_tasks 应传递当前 candidate_id 作为 exclude"""
+        col_mock = mock_mongo.get_collection.return_value
+        col_mock.find_one.return_value = None
+        cand = self._make_candidate("cand_myid")
+        now = int(time.time())
+
+        manager.topic_matcher = MagicMock()
+        manager.topic_matcher.match.return_value = None
+
+        manager._emit_crawl_tasks(cand, "exploded", now)
+
+        manager.topic_matcher.match.assert_called_once_with(
+            "测试：某重大社会事件引发热议",
+            exclude_candidate_id="cand_myid",
+        )

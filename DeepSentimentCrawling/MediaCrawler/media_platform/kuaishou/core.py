@@ -184,7 +184,7 @@ class KuaishouCrawler(AbstractCrawler):
                 page += 1
 
                 # Sleep after page navigation
-                await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                await utils.random_sleep()
                 utils.logger.info(f"[KuaishouCrawler.search] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page-1}")
 
                 await self.batch_get_video_comments(video_id_list)
@@ -222,7 +222,7 @@ class KuaishouCrawler(AbstractCrawler):
                 result = await self.ks_client.get_video_info(video_id)
                 
                 # Sleep after fetching video details
-                await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                await utils.random_sleep()
                 utils.logger.info(f"[KuaishouCrawler.get_video_info_task] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after fetching video details {video_id}")
                 
                 utils.logger.info(
@@ -272,13 +272,13 @@ class KuaishouCrawler(AbstractCrawler):
 
             await self.ks_client.get_video_all_comments(
                 photo_id=video_id,
-                crawl_interval=config.CRAWLER_MAX_SLEEP_SEC,
+                crawl_interval=utils.get_platform_sleep_sec(),
                 callback=kuaishou_store.batch_update_ks_video_comments,
                 max_count=config.CRAWLER_MAX_COMMENTS_COUNT_SINGLENOTES,
             )
 
             # Sleep between videos
-            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+            await utils.random_sleep()
 
         except DataFetchError as ex:
             utils.logger.error(
@@ -400,7 +400,7 @@ class KuaishouCrawler(AbstractCrawler):
             # Get all video information of the creator
             all_video_list = await self.ks_client.get_all_videos_by_creator(
                 user_id=user_id,
-                crawl_interval=config.CRAWLER_MAX_SLEEP_SEC,
+                crawl_interval=utils.get_platform_sleep_sec(),
                 callback=self.fetch_creator_video_detail,
             )
 

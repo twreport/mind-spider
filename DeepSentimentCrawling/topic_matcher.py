@@ -3,11 +3,13 @@
 TopicMatcher — 话题匹配 + 关键词扩展
 
 匹配流程（三分类）：
-1. 精确去重：24h 内相同 topic_title 的用户任务 → duplicate
-2. 候选匹配：jieba 预筛 + LLM 语义判断
+1. 精确去重：36h 内相同 topic_title 的用户任务 → duplicate
+2. 候选匹配：jieba 预筛 + fast-path + LLM 语义判断
+   - fast-path: jieba overlap ≥ 0.8 → 直接 duplicate，跳过 LLM
+   - LLM 区间: 0.3 ~ 0.8，区分「具体事件」与「宏观主题」
    - duplicate: 同一事件同一角度，返回已有数据
-   - development: 同一事件新进展/新角度，需要爬取但关联已有 candidate
-   - different: 无关事件，正常新建
+   - development: 同一事件新进展（时间线推进），需要爬取但关联已有 candidate
+   - different: 无关事件或同一宏观主题下的不同故事，正常新建
 
 关键词扩展（独立调用）：
 - 仅当用户未传 search_keywords 时触发
@@ -66,6 +68,8 @@ def _parse_llm_json(text: str) -> dict:
 class TopicMatcher:
     """话题匹配 + 关键词扩展（两个独立 LLM 调用）"""
 
+    EXACT_DEDUP_WINDOW = 36 * 3600  # 精确去重窗口：36 小时
+
     def __init__(self, mongo: MongoWriter):
         self.mongo = mongo
 
@@ -84,9 +88,15 @@ class TopicMatcher:
 
     # ── 话题匹配（三分类）──────────────────────────────────────
 
-    def match(self, topic_title: str) -> Optional[dict]:
+    def match(
+        self, topic_title: str, exclude_candidate_id: str = None
+    ) -> Optional[dict]:
         """
-        主入口：精确去重 → jieba 预筛 → LLM 三分类 → jieba fallback
+        主入口：精确去重 → jieba 预筛 → fast-path → LLM 三分类 → jieba fallback
+
+        Args:
+            topic_title: 待匹配的话题标题
+            exclude_candidate_id: 排除的 candidate_id（避免自匹配，用于候选触发路径）
 
         Returns:
             匹配结果 dict，包含 match_type 字段：
@@ -94,13 +104,13 @@ class TopicMatcher:
             - development: 事件进展，需爬取但关联已有 candidate
             未命中返回 None（等价于 different）
         """
-        # 1) 24h 精确去重
-        exact = self._check_recent_user_tasks(topic_title)
+        # 1) 36h 精确去重
+        exact = self._check_recent_user_tasks(topic_title, exclude_candidate_id)
         if exact:
             return exact
 
         # 2) 从 MongoDB 拉候选
-        candidates = self._fetch_deep_crawled_candidates()
+        candidates = self._fetch_deep_crawled_candidates(exclude_candidate_id)
         if not candidates:
             return None
 
@@ -109,29 +119,51 @@ class TopicMatcher:
         if not shortlist:
             return None
 
-        # 4) LLM 三分类
+        # 4) fast-path：overlap >= 0.8 → 直接 duplicate，跳过 LLM
+        top_cand, top_overlap = shortlist[0]
+        if top_overlap >= 0.8:
+            cand_id = top_cand.get("candidate_id", "")
+            logger.info(
+                f"[TopicMatcher] fast-path duplicate: {topic_title} -> "
+                f"{top_cand.get('canonical_title')} (overlap={top_overlap:.2f})"
+            )
+            return {
+                "match_type": MATCH_DUPLICATE,
+                "candidate_id": cand_id,
+                "canonical_title": top_cand.get("canonical_title", ""),
+                "status": top_cand.get("status", ""),
+                "source_titles": top_cand.get("source_titles", []),
+                "crawl_stats": self._get_crawl_stats(cand_id),
+                "match_method": "jieba_fast",
+                "confidence": round(top_overlap, 2),
+                "reason": f"jieba 关键词重叠率 {top_overlap:.0%}（fast-path）",
+            }
+
+        # 5) LLM 三分类（overlap 0.3 ~ 0.8）
         if self._llm_available:
             llm_result = self._llm_match(topic_title, shortlist)
             if llm_result:
                 return llm_result
 
-        # 5) LLM 不可用或未命中，降级 jieba（overlap >= 0.6 → duplicate）
+        # 6) LLM 不可用或未命中，降级 jieba（overlap >= 0.6 → duplicate）
         return self._jieba_fallback(topic_title, shortlist)
 
-    def _check_recent_user_tasks(self, topic_title: str) -> Optional[dict]:
-        """24h 内精确去重：相同 topic_title 的用户任务"""
+    def _check_recent_user_tasks(
+        self, topic_title: str, exclude_candidate_id: str = None
+    ) -> Optional[dict]:
+        """36h 内精确去重：相同 topic_title 的用户任务"""
         try:
             self.mongo.connect()
             col = self.mongo.get_collection("crawl_tasks")
-            cutoff = int(time.time()) - 86400
-            doc = col.find_one(
-                {
-                    "topic_title": topic_title,
-                    "_source": "user",
-                    "created_at": {"$gte": cutoff},
-                },
-                sort=[("created_at", -1)],
-            )
+            cutoff = int(time.time()) - self.EXACT_DEDUP_WINDOW
+            query = {
+                "topic_title": topic_title,
+                "_source": "user",
+                "created_at": {"$gte": cutoff},
+            }
+            if exclude_candidate_id:
+                query["candidate_id"] = {"$ne": exclude_candidate_id}
+            doc = col.find_one(query, sort=[("created_at", -1)])
             if doc:
                 task_id = doc.get("task_id", "")
                 logger.info(f"[TopicMatcher] 精确去重命中: {topic_title} -> {task_id}")
@@ -144,13 +176,15 @@ class TopicMatcher:
                     "crawl_stats": self._get_crawl_stats_by_title(topic_title),
                     "match_method": "exact",
                     "confidence": 1.0,
-                    "reason": f"24h 内已有相同话题的用户任务 ({task_id})",
+                    "reason": f"36h 内已有相同话题的用户任务 ({task_id})",
                 }
         except Exception as e:
             logger.warning(f"[TopicMatcher] 精确去重查询失败: {e}")
         return None
 
-    def _fetch_deep_crawled_candidates(self) -> list[dict]:
+    def _fetch_deep_crawled_candidates(
+        self, exclude_candidate_id: str = None
+    ) -> list[dict]:
         """
         查已爬取话题，两个来源合并去重：
         1. candidates 集合（表层采集自动发现，status ∈ exploded/tracking/closed）
@@ -164,9 +198,12 @@ class TopicMatcher:
 
             # 来源 1: candidates 集合
             cand_col = self.mongo.get_collection("candidates")
+            cand_query = {"status": {"$in": ["exploded", "tracking", "closed"]}}
+            if exclude_candidate_id:
+                cand_query["candidate_id"] = {"$ne": exclude_candidate_id}
             cand_docs = list(
                 cand_col.find(
-                    {"status": {"$in": ["exploded", "tracking", "closed"]}},
+                    cand_query,
                     {"candidate_id": 1, "canonical_title": 1, "source_titles": 1, "status": 1, "_id": 0},
                 )
                 .sort([("updated_at", -1)])
@@ -178,11 +215,14 @@ class TopicMatcher:
 
             # 来源 2: crawl_tasks 中用户发起的已完成/进行中任务
             task_col = self.mongo.get_collection("crawl_tasks")
+            task_match = {
+                "_source": "user",
+                "status": {"$in": ["completed", "running"]},
+            }
+            if exclude_candidate_id:
+                task_match["candidate_id"] = {"$ne": exclude_candidate_id}
             pipeline = [
-                {"$match": {
-                    "_source": "user",
-                    "status": {"$in": ["completed", "running"]},
-                }},
+                {"$match": task_match},
                 {"$sort": {"created_at": -1}},
                 {"$group": {
                     "_id": "$topic_title",
@@ -253,12 +293,26 @@ class TopicMatcher:
         prompt = (
             f'用户话题："{topic_title}"\n'
             f"已有候选话题：{candidates_text}\n\n"
-            "判断用户话题与候选的关系，三选一：\n"
-            '- "duplicate"：同一事件、同一角度，信息完全重复\n'
-            '- "development"：同一事件，但有新进展、新角度或新信息\n'
-            '- "different"：不同事件，无关联\n\n'
+            "## 任务\n"
+            "判断用户话题与已有候选的关系。注意区分「具体事件」和「宏观主题」：\n"
+            "- 「具体事件」= 同一个故事/新闻事件（同一时间、同一主体、同一事件）\n"
+            "- 「宏观主题」= 同一个领域/话题类别，但描述的是不同的具体故事\n\n"
+            "## 分类规则\n"
+            '- "duplicate"：同一个具体事件、同一角度，信息完全重复\n'
+            '- "development"：同一个具体事件的时间线推进（后续报道、官方回应、调查结果、新影响），不包括同一宏观主题下的不同切面\n'
+            '- "different"：不同的具体事件，或同一宏观主题下的不同故事\n\n'
+            "## 判断步骤\n"
+            "1. 先判断两个话题是否描述同一个具体事件（same_event）\n"
+            "2. 如果是同一事件，再判断是重复还是进展\n"
+            "3. 如果不是同一事件，即使属于同一宏观主题也应判为 different\n\n"
+            "## 示例\n"
+            '1. 用户: "某明星道歉" ← 已有: "某明星出轨" → development（同一事件后续）\n'
+            '2. 用户: "两会委员提房价议案" ← 已有: "两会代表热议房价" → different（同一宏观主题，不同具体故事）\n'
+            '3. 用户: "北京暴雨致交通瘫痪" ← 已有: "北京暴雨多人被困" → development（同一事件不同影响）\n'
+            '4. 用户: "上海暴雨致交通瘫痪" ← 已有: "北京暴雨致交通瘫痪" → different（不同城市不同事件）\n'
+            '5. 用户: "某某公司裁员" ← 已有: "某某公司裁员" → duplicate（完全相同）\n\n'
             "输出 JSON（不要输出其他内容）：\n"
-            '{"type": "duplicate|development|different", '
+            '{"same_event": true/false, "type": "duplicate|development|different", '
             '"matched_id": "candidate_id 或 null", '
             '"confidence": 0.0-1.0, "reason": "简短原因"}'
         )
@@ -271,7 +325,7 @@ class TopicMatcher:
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.1,
-                max_tokens=200,
+                max_tokens=300,
             )
             result = _parse_llm_json(resp.choices[0].message.content)
             match_type = result.get("type", "different")
@@ -293,7 +347,8 @@ class TopicMatcher:
             logger.info(
                 f"[TopicMatcher] LLM 匹配: {topic_title} -> "
                 f"{matched_cand.get('canonical_title')} "
-                f"(type={match_type}, confidence={result.get('confidence')})"
+                f"(type={match_type}, same_event={result.get('same_event')}, "
+                f"confidence={result.get('confidence')})"
             )
             return {
                 "match_type": match_type,

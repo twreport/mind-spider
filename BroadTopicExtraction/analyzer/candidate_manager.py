@@ -34,13 +34,6 @@ from ms_config import settings
 COLLECTION = "candidates"
 CRAWL_TASKS_COLLECTION = "crawl_tasks"
 
-# 表层采集平台名 → 深层采集平台代码
-_SURFACE_TO_DEEP = {
-    "weibo": "wb", "bilibili": "bili", "douyin": "dy",
-    "zhihu": "zhihu", "kuaishou": "ks", "tieba": "tieba",
-    "xiaohongshu": "xhs", "xhs": "xhs",
-}
-
 # 按候选状态定义爬取规模
 # 按候选状态定义爬取规模（只在进入对应状态时触发）
 # 目前只在 exploded 时触发，如需更早介入可取消注释：
@@ -117,6 +110,14 @@ class CandidateManager:
             db_name=settings.MONGO_SIGNAL_DB_NAME
         )
         self.thresholds = {**DEFAULT_CANDIDATE_THRESHOLDS, **(thresholds or {})}
+
+        # TopicMatcher 用于候选触发路径去重
+        try:
+            from DeepSentimentCrawling.topic_matcher import TopicMatcher
+            self.topic_matcher = TopicMatcher(mongo=self.signal_writer)
+        except Exception as e:
+            logger.warning(f"[Candidate] TopicMatcher 初始化失败，候选路径去重不可用: {e}")
+            self.topic_matcher = None
 
     def ensure_indexes(self) -> None:
         """创建 candidates collection 索引"""
@@ -370,15 +371,32 @@ class CandidateManager:
         if not scale:
             return
 
-        # 从候选的平台列表映射到深层采集平台代码
-        deep_platforms = []
-        for plat in candidate.get("platforms", []):
-            code = _SURFACE_TO_DEEP.get(plat)
-            if code and code not in deep_platforms:
-                deep_platforms.append(code)
+        cand_id = candidate["candidate_id"]
 
-        # 限制爬取平台数
-        deep_platforms = deep_platforms[:scale["platforms"]]
+        # TopicMatcher 去重：检查是否与已有候选描述同一事件
+        if self.topic_matcher:
+            try:
+                match_result = self.topic_matcher.match(
+                    candidate["canonical_title"],
+                    exclude_candidate_id=cand_id,
+                )
+                if match_result and match_result.get("match_type") == "duplicate":
+                    logger.info(
+                        f"[Candidate] 候选去重跳过: {candidate['canonical_title'][:30]} "
+                        f"与已有 {match_result.get('canonical_title', '')[:30]} 重复 "
+                        f"(method={match_result.get('match_method')}, "
+                        f"confidence={match_result.get('confidence')})"
+                    )
+                    return
+            except Exception as e:
+                logger.warning(f"[Candidate] TopicMatcher 调用失败，继续创建任务: {e}")
+
+        # 无论候选来自哪些表层平台，一律为所有 7 个深层爬取平台创建任务
+        # 7 个深层爬取平台：wb, bili, dy, zhihu, ks, tieba, xhs
+        all_deep_platforms = ["wb", "bili", "dy", "zhihu", "ks", "tieba", "xhs"]
+
+        # 限制爬取平台数（按配置的 platforms 数量）
+        deep_platforms = all_deep_platforms[:scale["platforms"]]
         if not deep_platforms:
             return
 

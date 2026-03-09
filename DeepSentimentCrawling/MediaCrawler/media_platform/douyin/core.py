@@ -320,7 +320,7 @@ class DouYinCrawler(AbstractCrawler):
                     aweme_list.append(aweme_id)
                     await douyin_store.update_douyin_aweme(aweme_item=aweme_info)
                     await self.get_aweme_media(aweme_item=aweme_info)
-            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+            await utils.random_sleep()
 
     async def get_specified_awemes(self):
         """Get the information and comments of the specified post from URLs or IDs"""
@@ -363,7 +363,7 @@ class DouYinCrawler(AbstractCrawler):
             try:
                 result = await self.dy_client.get_video_by_id(aweme_id)
                 # Sleep after fetching aweme detail
-                await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                await utils.random_sleep()
                 utils.logger.info(f"[DouYinCrawler.get_aweme_detail] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after fetching aweme {aweme_id}")
                 return result
             except DataFetchError as ex:
@@ -393,8 +393,8 @@ class DouYinCrawler(AbstractCrawler):
         async with semaphore:
             try:
                 # 将关键词列表传递给 get_aweme_all_comments 方法
-                # Use fixed crawling interval
-                crawl_interval = config.CRAWLER_MAX_SLEEP_SEC
+                # Use platform-specific crawling interval
+                crawl_interval = utils.get_platform_sleep_sec()
                 await self.dy_client.get_aweme_all_comments(
                     aweme_id=aweme_id,
                     crawl_interval=crawl_interval,

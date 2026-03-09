@@ -175,7 +175,7 @@ class ZhihuCrawler(AbstractCrawler):
                         break
 
                     # Sleep after page navigation
-                    await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                    await utils.random_sleep()
                     utils.logger.info(f"[ZhihuCrawler.search] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page-1}")
                     
                     page += 1
@@ -243,12 +243,12 @@ class ZhihuCrawler(AbstractCrawler):
             )
             
             # Sleep before fetching comments
-            await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+            await utils.random_sleep()
             utils.logger.info(f"[ZhihuCrawler.get_comments] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds before fetching comments for content {content_item.content_id}")
             
             await self.zhihu_client.get_note_all_comments(
                 content=content_item,
-                crawl_interval=config.CRAWLER_MAX_SLEEP_SEC,
+                crawl_interval=utils.get_platform_sleep_sec(),
                 callback=zhihu_store.batch_update_zhihu_note_comments,
             )
 
@@ -286,21 +286,21 @@ class ZhihuCrawler(AbstractCrawler):
             # Get all anwser information of the creator
             all_content_list = await self.zhihu_client.get_all_anwser_by_creator(
                 creator=createor_info,
-                crawl_interval=config.CRAWLER_MAX_SLEEP_SEC,
+                crawl_interval=utils.get_platform_sleep_sec(),
                 callback=zhihu_store.batch_update_zhihu_contents,
             )
 
             # Get all articles of the creator's contents
             # all_content_list = await self.zhihu_client.get_all_articles_by_creator(
             #     creator=createor_info,
-            #     crawl_interval=config.CRAWLER_MAX_SLEEP_SEC,
+            #     crawl_interval=utils.get_platform_sleep_sec(),
             #     callback=zhihu_store.batch_update_zhihu_contents
             # )
 
             # Get all videos of the creator's contents
             # all_content_list = await self.zhihu_client.get_all_videos_by_creator(
             #     creator=createor_info,
-            #     crawl_interval=config.CRAWLER_MAX_SLEEP_SEC,
+            #     crawl_interval=utils.get_platform_sleep_sec(),
             #     callback=zhihu_store.batch_update_zhihu_contents
             # )
 
@@ -334,7 +334,7 @@ class ZhihuCrawler(AbstractCrawler):
                 result = await self.zhihu_client.get_answer_info(question_id, answer_id)
                 
                 # Sleep after fetching answer details
-                await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                await utils.random_sleep()
                 utils.logger.info(f"[ZhihuCrawler.get_note_detail] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after fetching answer details {answer_id}")
                 
                 return result
@@ -347,7 +347,7 @@ class ZhihuCrawler(AbstractCrawler):
                 result = await self.zhihu_client.get_article_info(article_id)
                 
                 # Sleep after fetching article details
-                await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                await utils.random_sleep()
                 utils.logger.info(f"[ZhihuCrawler.get_note_detail] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after fetching article details {article_id}")
                 
                 return result
@@ -360,7 +360,7 @@ class ZhihuCrawler(AbstractCrawler):
                 result = await self.zhihu_client.get_video_info(video_id)
                 
                 # Sleep after fetching video details
-                await utils.random_sleep(config.CRAWLER_MAX_SLEEP_SEC)
+                await utils.random_sleep()
                 utils.logger.info(f"[ZhihuCrawler.get_note_detail] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after fetching video details {video_id}")
                 
                 return result

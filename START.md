@@ -121,71 +121,65 @@ python BroadTopicExtraction/admin/app.py --host 127.0.0.1 --port 8778
 
 ---
 
-## 服务器后台部署（nohup）
+## 服务器部署（systemd）
+
+> 服务器：`10.168.1.80`，部署路径：`/deploy/parallel-universe/mind-spider`
+> Python 环境：`/root/anaconda3/envs/mind-spider/bin/python`
+
+两个 systemd 服务均已配置为 `enabled`（开机自启）+ `Restart=always`（崩溃自动重启）。
+
+### 服务一览
+
+| 服务名 | 说明 | 日志路径 |
+|--------|------|----------|
+| `mindspider-broad-crawl` | 表层采集调度器（53+ 数据源） | `logs/broad_crawl.log` |
+| `mindspider-deep-crawl` | 深层采集服务（7 平台 Playwright，端口 8777） | `logs/deep_crawl.log` |
+
+### 常用命令
 
 ```bash
-# 先确保在项目根目录，并激活环境
-cd /path/to/mind-spider
-conda activate mind-spider
-mkdir -p logs
+# 查看服务状态
+systemctl status mindspider-broad-crawl
+systemctl status mindspider-deep-crawl
+
+# 启动 / 停止 / 重启
+systemctl start mindspider-broad-crawl
+systemctl stop mindspider-broad-crawl
+systemctl restart mindspider-broad-crawl
+
+systemctl start mindspider-deep-crawl
+systemctl stop mindspider-deep-crawl
+systemctl restart mindspider-deep-crawl
+
+# 查看实时日志
+journalctl -u mindspider-broad-crawl -f
+journalctl -u mindspider-deep-crawl -f
+
+# 或直接 tail 日志文件
+tail -f /deploy/parallel-universe/mind-spider/logs/broad_crawl.log
+tail -f /deploy/parallel-universe/mind-spider/logs/deep_crawl.log
+
+# 查看服务配置
+systemctl cat mindspider-broad-crawl
+systemctl cat mindspider-deep-crawl
 ```
 
-### 表层采集 — 常驻调度器
+### 代码更新流程
 
 ```bash
-# 启动（全部分类）
-nohup python BroadTopicExtraction/start_scheduler.py \
-  > logs/broad_scheduler.log 2>&1 &
-echo $! > logs/broad_scheduler.pid
+# 本地
+git push
 
-# 启动（指定分类）
-nohup python BroadTopicExtraction/start_scheduler.py \
-  --categories hot_national hot_vertical media \
-  > logs/broad_scheduler.log 2>&1 &
-echo $! > logs/broad_scheduler.pid
+# 服务器
+cd /deploy/parallel-universe/mind-spider
+git pull
+systemctl restart mindspider-broad-crawl
+systemctl restart mindspider-deep-crawl
 ```
 
-### 深层采集 — 常驻服务
+### service 文件位置
 
-```bash
-# 启动（全部平台）
-nohup python DeepSentimentCrawling/start_deep_crawl.py \
-  > logs/deep_crawl.log 2>&1 &
-echo $! > logs/deep_crawl.pid
+- `/etc/systemd/system/mindspider-broad-crawl.service`
+- `/etc/systemd/system/mindspider-deep-crawl.service`
 
-# 启动（指定平台 + 端口）
-nohup python DeepSentimentCrawling/start_deep_crawl.py \
-  --platforms xhs,dy,bili --port 8080 \
-  > logs/deep_crawl.log 2>&1 &
-echo $! > logs/deep_crawl.pid
-```
-
-### 浅层采集监控面板
-
-```bash
-nohup python BroadTopicExtraction/admin/app.py \
-  > logs/admin_dashboard.log 2>&1 &
-echo $! > logs/admin_dashboard.pid
-```
-
-### 进程管理
-
-```bash
-# 查看运行中的进程
-ps aux | grep -E "(start_scheduler|start_deep_crawl|admin/app)" | grep -v grep
-
-# 实时查看日志
-tail -f logs/broad_scheduler.log
-tail -f logs/deep_crawl.log
-tail -f logs/admin_dashboard.log
-
-# 停止服务（通过 PID 文件）
-kill $(cat logs/broad_scheduler.pid)
-kill $(cat logs/deep_crawl.pid)
-kill $(cat logs/admin_dashboard.pid)
-
-# 停止服务（通过进程名）
-pkill -f "start_scheduler.py"
-pkill -f "start_deep_crawl.py"
-pkill -f "admin/app.py"
-```
+修改 service 文件后需执行 `systemctl daemon-reload`。

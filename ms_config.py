@@ -30,9 +30,9 @@ class Settings(BaseSettings):
     MONGO_SIGNAL_DB_NAME: str = Field("mindspider_signal", description="MongoDB 信号库，存储信号检测、候选管理等衍生数据")
 
     # AI API 配置
-    MINDSPIDER_API_KEY: Optional[str] = Field(None, description="MINDSPIDER API密钥")
-    MINDSPIDER_BASE_URL: Optional[str] = Field("https://api.deepseek.com", description="MINDSPIDER API基础URL，推荐deepseek-chat模型使用https://api.deepseek.com")
-    MINDSPIDER_MODEL_NAME: Optional[str] = Field("deepseek-chat", description="MINDSPIDER API模型名称, 推荐deepseek-chat")
+    MINDSPIDER_API_KEY: Optional[str] = Field("sk-a6578e2ccfc446c08300752ad2591586", description="MINDSPIDER API密钥")
+    MINDSPIDER_BASE_URL: Optional[str] = Field("https://dashscope.aliyuncs.com/compatible-mode/v1", description="MINDSPIDER API基础URL，推荐deepseek-chat模型使用https://api.deepseek.com")
+    MINDSPIDER_MODEL_NAME: Optional[str] = Field("qwen-flash", description="MINDSPIDER API模型名称, 推荐deepseek-chat")
 
     # 轻量 LLM 配置（话题匹配 + 关键词扩展，推荐 qwen-flash 等低成本模型）
     TOPIC_MATCHER_API_KEY: Optional[str] = Field(None, description="话题匹配 LLM API Key，为空则复用 MINDSPIDER_API_KEY")

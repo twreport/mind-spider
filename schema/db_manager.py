@@ -35,7 +35,7 @@ class DatabaseManager:
                 url = f"postgresql+psycopg://{settings.DB_USER}:{quote_plus(settings.DB_PASSWORD)}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
             else:
                 url = f"mysql+pymysql://{settings.DB_USER}:{quote_plus(settings.DB_PASSWORD)}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}?charset={settings.DB_CHARSET}"
-            self.engine = create_engine(url, future=True)
+            self.engine = create_engine(url, future=True, pool_recycle=3600, pool_pre_ping=True)
             logger.info(f"成功连接到数据库: {settings.DB_NAME}")
         except Exception as e:
             logger.error(f"数据库连接失败: {e}")
