@@ -146,6 +146,56 @@ def get_task_list(
     return {"total": total, "tasks": docs}
 
 
+def get_top_candidates(mongo, limit: int = 10) -> List[Dict]:
+    """
+    24 小时内热度最高的候选话题（按最高 score_pos 排序）。
+
+    从 candidates 集合查询近 24h 有更新的候选，
+    计算其 snapshots 中的最高 score_pos，取 top N。
+    """
+    mongo.connect()
+    col = mongo.get_collection("candidates")
+    h24_ago = int(time.time()) - 86400
+
+    docs = list(
+        col.find(
+            {"updated_at": {"$gte": h24_ago}},
+            {
+                "canonical_title": 1,
+                "status": 1,
+                "snapshots": 1,
+                "first_seen_at": 1,
+                "updated_at": 1,
+                "platform_count": 1,
+            },
+        )
+    )
+
+    candidates = []
+    for doc in docs:
+        snaps = doc.get("snapshots", [])
+        if not snaps:
+            continue
+        max_score = max(s.get("score_pos", 0) for s in snaps)
+        cur_score = snaps[-1].get("score_pos", 0)
+        candidates.append(
+            {
+                "title": doc.get("canonical_title", ""),
+                "status": doc.get("status", ""),
+                "max_score": max_score,
+                "current_score": cur_score,
+                "platform_count": doc.get("platform_count", 0),
+                "first_seen_at": doc.get("first_seen_at"),
+                "updated_at": doc.get("updated_at"),
+                "triggered": max_score >= 10000,
+                "confirmed": max_score >= 4000,
+            }
+        )
+
+    candidates.sort(key=lambda c: c["max_score"], reverse=True)
+    return candidates[:limit]
+
+
 def get_volume_trend(mongo, hours: int = 48) -> Dict[str, List[Dict]]:
     """
     各平台数据产量趋势（按小时聚合 completed 任务数量）。

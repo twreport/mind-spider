@@ -182,6 +182,28 @@ def get_dashboard_html(token: str = "") -> str:
         </div>
     </div>
 
+    <!-- 热门候选话题 -->
+    <div class="section">
+        <h2>24h 热门候选 TOP 10</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>排名</th>
+                    <th>话题</th>
+                    <th>状态</th>
+                    <th>最高热度</th>
+                    <th>当前热度</th>
+                    <th>跨平台数</th>
+                    <th>深爬触发</th>
+                    <th>首次出现</th>
+                </tr>
+            </thead>
+            <tbody id="candidates-table-body">
+                <tr><td colspan="8" style="text-align:center; color:#aaa;">加载中...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
     <!-- 任务列表 -->
     <div class="section">
         <h2>任务列表</h2>
@@ -342,6 +364,15 @@ def get_dashboard_html(token: str = "") -> str:
             }}
         }}
 
+        async function loadCandidates() {{
+            try {{
+                const data = await fetchJSON('/dashboard/api/top-candidates?limit=10');
+                renderCandidates(data);
+            }} catch (e) {{
+                console.error('加载候选话题失败:', e);
+            }}
+        }}
+
         async function loadTasks() {{
             try {{
                 const platform = document.getElementById('filter-platform').value;
@@ -490,6 +521,54 @@ def get_dashboard_html(token: str = "") -> str:
             }}
         }}
 
+        function renderCandidates(candidates) {{
+            const tbody = document.getElementById('candidates-table-body');
+            if (!candidates || !candidates.length) {{
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#aaa;">24h 内暂无候选话题</td></tr>';
+                return;
+            }}
+            let html = '';
+            for (let i = 0; i < candidates.length; i++) {{
+                const c = candidates[i];
+                const statusMap = {{
+                    emerging: ['#e6f7ff', '#1890ff'],
+                    rising: ['#fff7e6', '#fa8c16'],
+                    confirmed: ['#fff1f0', '#f5222d'],
+                    exploded: ['#fff1f0', '#cf1322'],
+                    tracking: ['#f6ffed', '#52c41a'],
+                    closed: ['#f5f5f5', '#999'],
+                    faded: ['#f5f5f5', '#ccc'],
+                }};
+                const [bg, color] = statusMap[c.status] || ['#f5f5f5', '#999'];
+
+                // 热度条：相对于第一名的比例
+                const maxOfAll = candidates[0].max_score || 1;
+                const pct = Math.round(c.max_score / maxOfAll * 100);
+                const barColor = c.triggered ? '#f5222d' : c.confirmed ? '#fa8c16' : '#1890ff';
+
+                let triggerLabel = '<span style="color:#ccc;">—</span>';
+                if (c.triggered) triggerLabel = '<span style="color:#f5222d; font-weight:600;">exploded</span>';
+                else if (c.confirmed) triggerLabel = '<span style="color:#fa8c16; font-weight:600;">confirmed</span>';
+
+                html += `<tr>
+                    <td style="font-weight:600; color:#888;">${{i + 1}}</td>
+                    <td style="max-width:280px;">
+                        <div>${{escapeHtml(c.title)}}</div>
+                        <div style="margin-top:4px; height:4px; border-radius:2px; background:#f0f0f0;">
+                            <div style="height:100%; width:${{pct}}%; background:${{barColor}}; border-radius:2px;"></div>
+                        </div>
+                    </td>
+                    <td><span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;background:${{bg}};color:${{color}};">${{c.status}}</span></td>
+                    <td style="font-weight:700;">${{c.max_score.toLocaleString()}}</td>
+                    <td>${{c.current_score.toLocaleString()}}</td>
+                    <td>${{c.platform_count || '-'}}</td>
+                    <td>${{triggerLabel}}</td>
+                    <td>${{formatTs(c.first_seen_at)}}</td>
+                </tr>`;
+            }}
+            tbody.innerHTML = html;
+        }}
+
         function renderChart(data) {{
             const ctx = document.getElementById('volume-chart').getContext('2d');
             const allHours = new Set();
@@ -582,8 +661,8 @@ def get_dashboard_html(token: str = "") -> str:
         // --- 初始化 & 自动刷新 ---
         async function refreshAll() {{
             await Promise.all([
-                loadOverview(), loadPlatforms(), loadTasks(),
-                loadVolumes(), loadErrors()
+                loadOverview(), loadPlatforms(), loadCandidates(),
+                loadTasks(), loadVolumes(), loadErrors()
             ]);
             document.getElementById('last-updated').textContent =
                 '更新于 ' + new Date().toLocaleTimeString();

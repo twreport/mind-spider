@@ -110,6 +110,20 @@ async def api_volumes(
     return JSONResponse(data)
 
 
+@router.get("/api/top-candidates")
+async def api_top_candidates(
+    token: str = Query(""),
+    limit: int = Query(10, ge=1, le=50),
+):
+    """24h 内热度最高的候选话题"""
+    _check_token(token)
+    if not _mongo:
+        raise HTTPException(status_code=500, detail="服务未初始化")
+    data = m.get_top_candidates(_mongo, limit)
+    content = json.loads(json.dumps(data, ensure_ascii=False, default=str))
+    return JSONResponse(content)
+
+
 @router.get("/api/errors")
 async def api_errors(
     token: str = Query(""),
