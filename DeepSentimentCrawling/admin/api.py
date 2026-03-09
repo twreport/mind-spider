@@ -49,8 +49,7 @@ def _check_token(token: str):
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(token: str = Query("")):
-    """主面板页面"""
-    _check_token(token)
+    """主面板页面（不校验 token，前端 JS 调 API 时校验）"""
     return HTMLResponse(get_dashboard_html(token))
 
 

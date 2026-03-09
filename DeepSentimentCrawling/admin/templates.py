@@ -259,7 +259,7 @@ def get_dashboard_html(token: str = "") -> str:
     </div>
 
     <script>
-        const TOKEN = "{token_param}";
+        let TOKEN = "{token_param}";
         const AMP_TOKEN = "{amp_token}";
         const PLATFORM_NAMES = {{
             xhs: '小红书', dy: '抖音', bili: 'B站', wb: '微博',
@@ -274,11 +274,47 @@ def get_dashboard_html(token: str = "") -> str:
         document.getElementById('shallow-link').href =
             'http://' + window.location.hostname + ':8778/?' + TOKEN;
 
+        // --- Token 鉴权处理 ---
+        function promptToken() {{
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+            overlay.innerHTML = `
+                <div style="background:#fff;padding:32px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);text-align:center;max-width:360px;">
+                    <h3 style="margin-bottom:16px;color:#1a1a2e;">请输入访问令牌</h3>
+                    <input id="token-input" type="password" placeholder="Token"
+                        style="width:100%;padding:10px;border:1px solid #d9d9d9;border-radius:4px;font-size:14px;margin-bottom:16px;">
+                    <br>
+                    <button onclick="submitToken()"
+                        style="padding:8px 24px;background:#1890ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:14px;">
+                        确认
+                    </button>
+                </div>`;
+            document.body.appendChild(overlay);
+            document.getElementById('token-input').focus();
+            document.getElementById('token-input').addEventListener('keydown', (e) => {{
+                if (e.key === 'Enter') submitToken();
+            }});
+        }}
+
+        function submitToken() {{
+            const val = document.getElementById('token-input').value.trim();
+            if (val) {{
+                // 将 token 写入 URL 并刷新
+                const url = new URL(window.location);
+                url.searchParams.set('token', val);
+                window.location.href = url.toString();
+            }}
+        }}
+
         // --- 数据加载 ---
         async function fetchJSON(url) {{
             const sep = url.includes('?') ? '&' : '?';
             const fullUrl = TOKEN ? url + sep + TOKEN : url;
             const resp = await fetch(fullUrl);
+            if (resp.status === 403) {{
+                promptToken();
+                throw new Error('需要访问令牌');
+            }}
             if (!resp.ok) throw new Error(`HTTP ${{resp.status}}`);
             return resp.json();
         }}
