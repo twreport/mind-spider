@@ -7,6 +7,8 @@
 测试状态: ✅ 可用
 """
 
+import asyncio
+import subprocess
 from typing import Dict, List, Any
 from loguru import logger
 import json
@@ -85,7 +87,48 @@ class OfficialAPIAggregator(BaseAggregator):
             return self._make_success_result(source, items, raw_data=data)
 
         except Exception as e:
-            logger.error(f"[Official] 获取 {source} 失败: {e}")
+            logger.warning(f"[Official] httpx 获取 {source} 失败: {type(e).__name__}, 尝试 curl fallback")
+            return await self._fetch_via_curl(source, source_info)
+
+    async def _fetch_via_curl(self, source: str, source_info: Dict) -> AggregatorResult:
+        """httpx 失败时通过 curl 子进程获取数据（绕过 TLS 指纹检测）"""
+        url = source_info["url"]
+        method = source_info.get("method", "GET")
+
+        cmd = [
+            "curl", "-s", "--max-time", "15",
+            "-H", f"User-Agent: {self.default_headers['User-Agent']}",
+            "-H", "Accept: application/json, text/plain, */*",
+        ]
+
+        if method == "POST":
+            payload = source_info.get("payload", {})
+            cmd += [
+                "-X", "POST",
+                "-H", "Content-Type: application/json",
+                "-d", json.dumps(payload),
+            ]
+
+        cmd.append(url)
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=20)
+
+            if proc.returncode != 0:
+                err = stderr.decode(errors="replace").strip()
+                logger.error(f"[Official] curl 获取 {source} 失败: returncode={proc.returncode} {err}")
+                return self._make_error_result(source, f"curl failed: {err}")
+
+            data = json.loads(stdout.decode("utf-8"))
+            items = self._parse_by_source(data, source)
+            logger.info(f"[Official] curl fallback 获取 {source} 成功: {len(items)} 条")
+            return self._make_success_result(source, items, raw_data=data)
+
+        except Exception as e:
+            logger.error(f"[Official] curl fallback 获取 {source} 失败: {e}")
             return self._make_error_result(source, str(e))
 
     def _parse_by_source(self, data: Any, source: str) -> List[Dict]:
