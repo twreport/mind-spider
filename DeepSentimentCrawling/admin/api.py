@@ -124,6 +124,19 @@ async def api_top_candidates(
     return JSONResponse(content)
 
 
+@router.get("/api/candidate/{candidate_id}")
+async def api_candidate_detail(candidate_id: str, token: str = Query("")):
+    """候选话题详情（快照 + 状态跃迁，用于热度曲线）"""
+    _check_token(token)
+    if not _mongo:
+        raise HTTPException(status_code=500, detail="服务未初始化")
+    data = m.get_candidate_detail(_mongo, candidate_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="候选不存在")
+    content = json.loads(json.dumps(data, ensure_ascii=False, default=str))
+    return JSONResponse(content)
+
+
 @router.get("/api/errors")
 async def api_errors(
     token: str = Query(""),

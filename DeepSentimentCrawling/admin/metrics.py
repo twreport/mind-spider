@@ -161,6 +161,7 @@ def get_top_candidates(mongo, limit: int = 10) -> List[Dict]:
         col.find(
             {"updated_at": {"$gte": h24_ago}},
             {
+                "candidate_id": 1,
                 "canonical_title": 1,
                 "status": 1,
                 "snapshots": 1,
@@ -180,6 +181,7 @@ def get_top_candidates(mongo, limit: int = 10) -> List[Dict]:
         cur_score = snaps[-1].get("score_pos", 0)
         candidates.append(
             {
+                "candidate_id": doc.get("candidate_id", ""),
                 "title": doc.get("canonical_title", ""),
                 "status": doc.get("status", ""),
                 "max_score": max_score,
@@ -194,6 +196,51 @@ def get_top_candidates(mongo, limit: int = 10) -> List[Dict]:
 
     candidates.sort(key=lambda c: c["max_score"], reverse=True)
     return candidates[:limit]
+
+
+def get_candidate_detail(mongo, candidate_id: str) -> Optional[Dict]:
+    """
+    获取单个候选的完整快照和状态历史（用于绘制热度曲线）。
+    """
+    mongo.connect()
+    col = mongo.get_collection("candidates")
+    doc = col.find_one(
+        {"candidate_id": candidate_id},
+        {
+            "_id": 0,
+            "candidate_id": 1,
+            "canonical_title": 1,
+            "status": 1,
+            "snapshots": 1,
+            "status_history": 1,
+            "first_seen_at": 1,
+        },
+    )
+    if not doc:
+        return None
+
+    # 去重 status_history：只保留状态变化的节点
+    raw_history = doc.get("status_history", [])
+    transitions = []
+    prev_status = None
+    for h in raw_history:
+        if h.get("status") != prev_status:
+            transitions.append(
+                {
+                    "ts": h["ts"],
+                    "status": h["status"],
+                    "reason": h.get("reason", ""),
+                }
+            )
+            prev_status = h["status"]
+
+    return {
+        "candidate_id": doc.get("candidate_id"),
+        "title": doc.get("canonical_title", ""),
+        "status": doc.get("status", ""),
+        "snapshots": doc.get("snapshots", []),
+        "transitions": transitions,
+    }
 
 
 def get_volume_trend(mongo, hours: int = 48) -> Dict[str, List[Dict]]:

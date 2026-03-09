@@ -30,6 +30,7 @@ def get_dashboard_html(token: str = "") -> str:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MindSpider 深层采集监控面板</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3/dist/chartjs-plugin-annotation.min.js"></script>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{
@@ -143,6 +144,27 @@ def get_dashboard_html(token: str = "") -> str:
         .expand-row {{ display: none; }}
         .expand-row td {{ background: #fafafa; padding: 12px 20px; }}
         .expand-content {{ font-size: 12px; color: #666; line-height: 1.8; }}
+
+        /* 弹窗 */
+        .modal-overlay {{
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.45); z-index: 9998;
+            align-items: center; justify-content: center;
+        }}
+        .modal-overlay.active {{ display: flex; }}
+        .modal-box {{
+            background: #fff; border-radius: 12px; padding: 24px; width: 90%; max-width: 800px;
+            max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+            position: relative;
+        }}
+        .modal-box h3 {{ font-size: 16px; margin-bottom: 4px; color: #1a1a2e; padding-right: 36px; }}
+        .modal-box .modal-sub {{ font-size: 12px; color: #888; margin-bottom: 16px; }}
+        .modal-close {{
+            position: absolute; top: 16px; right: 20px; font-size: 22px; color: #999;
+            cursor: pointer; line-height: 1; border: none; background: none;
+        }}
+        .modal-close:hover {{ color: #333; }}
+        .modal-chart {{ position: relative; height: 350px; }}
 
         @media (max-width: 768px) {{
             .summary {{ grid-template-columns: repeat(2, 1fr); }}
@@ -553,7 +575,7 @@ def get_dashboard_html(token: str = "") -> str:
                 html += `<tr>
                     <td style="font-weight:600; color:#888;">${{i + 1}}</td>
                     <td style="max-width:280px;">
-                        <div>${{escapeHtml(c.title)}}</div>
+                        <div class="clickable" onclick="showCandidateChart('${{c.candidate_id}}')">${{escapeHtml(c.title)}}</div>
                         <div style="margin-top:4px; height:4px; border-radius:2px; background:#f0f0f0;">
                             <div style="height:100%; width:${{pct}}%; background:${{barColor}}; border-radius:2px;"></div>
                         </div>
@@ -632,6 +654,133 @@ def get_dashboard_html(token: str = "") -> str:
             container.innerHTML = html;
         }}
 
+        // --- 候选热度曲线弹窗 ---
+        let candidateChart = null;
+
+        async function showCandidateChart(candidateId) {{
+            try {{
+                const data = await fetchJSON('/dashboard/api/candidate/' + encodeURIComponent(candidateId));
+                document.getElementById('modal-title').textContent = data.title;
+                document.getElementById('modal-sub').textContent = '当前状态: ' + data.status;
+                document.getElementById('candidate-modal').classList.add('active');
+                renderCandidateChart(data);
+            }} catch (e) {{
+                console.error('加载候选详情失败:', e);
+            }}
+        }}
+
+        function closeCandidateModal() {{
+            document.getElementById('candidate-modal').classList.remove('active');
+            if (candidateChart) {{ candidateChart.destroy(); candidateChart = null; }}
+        }}
+
+        // ESC 关闭
+        document.addEventListener('keydown', (e) => {{
+            if (e.key === 'Escape') closeCandidateModal();
+        }});
+
+        function renderCandidateChart(data) {{
+            const ctx = document.getElementById('candidate-chart').getContext('2d');
+            const snaps = data.snapshots || [];
+            const transitions = data.transitions || [];
+
+            if (!snaps.length) return;
+
+            // 数据点
+            const labels = snaps.map(s => {{
+                const d = new Date(s.ts * 1000);
+                const pad = n => String(n).padStart(2, '0');
+                return `${{pad(d.getMonth()+1)}}-${{pad(d.getDate())}} ${{pad(d.getHours())}}:${{pad(d.getMinutes())}}`;
+            }});
+            const scores = snaps.map(s => s.score_pos);
+
+            // 状态跃迁标注：匹配最近的 snapshot 时间点
+            const statusColors = {{
+                emerging: '#1890ff', rising: '#fa8c16', confirmed: '#f5222d',
+                exploded: '#cf1322', tracking: '#52c41a', closed: '#999', faded: '#ccc'
+            }};
+            const annotations = {{}};
+            const keyStatuses = new Set(['rising', 'confirmed', 'exploded', 'tracking']);
+
+            for (const t of transitions) {{
+                if (!keyStatuses.has(t.status)) continue;
+                // 找最近的 snapshot index
+                let bestIdx = 0;
+                let bestDist = Infinity;
+                for (let i = 0; i < snaps.length; i++) {{
+                    const dist = Math.abs(snaps[i].ts - t.ts);
+                    if (dist < bestDist) {{ bestDist = dist; bestIdx = i; }}
+                }}
+                const key = 'tr_' + t.status + '_' + t.ts;
+                annotations[key] = {{
+                    type: 'point',
+                    xValue: bestIdx,
+                    yValue: snaps[bestIdx].score_pos,
+                    backgroundColor: statusColors[t.status] || '#999',
+                    borderColor: '#fff',
+                    borderWidth: 2,
+                    radius: 7,
+                }};
+                annotations[key + '_label'] = {{
+                    type: 'label',
+                    xValue: bestIdx,
+                    yValue: snaps[bestIdx].score_pos,
+                    content: t.status,
+                    color: statusColors[t.status] || '#999',
+                    font: {{ size: 11, weight: 'bold' }},
+                    position: 'start',
+                    yAdjust: -16,
+                }};
+            }}
+
+            // 阈值线
+            annotations['line_confirmed'] = {{
+                type: 'line', yMin: 4000, yMax: 4000,
+                borderColor: '#fa8c1680', borderWidth: 1, borderDash: [6, 4],
+                label: {{ display: true, content: 'confirmed (4000)', position: 'start',
+                         color: '#fa8c16', font: {{ size: 10 }}, backgroundColor: 'transparent' }}
+            }};
+            annotations['line_exploded'] = {{
+                type: 'line', yMin: 10000, yMax: 10000,
+                borderColor: '#f5222d80', borderWidth: 1, borderDash: [6, 4],
+                label: {{ display: true, content: 'exploded (10000)', position: 'start',
+                         color: '#f5222d', font: {{ size: 10 }}, backgroundColor: 'transparent' }}
+            }};
+
+            if (candidateChart) candidateChart.destroy();
+            candidateChart = new Chart(ctx, {{
+                type: 'line',
+                data: {{
+                    labels,
+                    datasets: [{{
+                        label: 'score_pos',
+                        data: scores,
+                        borderColor: '#1890ff',
+                        backgroundColor: '#1890ff20',
+                        tension: 0.3,
+                        fill: true,
+                        pointRadius: 2,
+                        pointHoverRadius: 5,
+                    }}]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {{ intersect: false, mode: 'index' }},
+                    scales: {{
+                        y: {{ beginAtZero: true, title: {{ display: true, text: 'score_pos' }} }},
+                        x: {{
+                            title: {{ display: true, text: '时间' }},
+                            ticks: {{ maxTicksLimit: 12, maxRotation: 45 }},
+                        }},
+                    }},
+                    plugins: {{
+                        annotation: {{ annotations }},
+                    }},
+                }},
+            }});
+        }}
+
         // --- 工具函数 ---
         function formatTs(ts) {{
             if (!ts) return '-';
@@ -683,5 +832,17 @@ def get_dashboard_html(token: str = "") -> str:
         refreshAll();
         setupAutoRefresh();
     </script>
+
+    <!-- 候选热度曲线弹窗 -->
+    <div class="modal-overlay" id="candidate-modal" onclick="if(event.target===this)closeCandidateModal()">
+        <div class="modal-box">
+            <button class="modal-close" onclick="closeCandidateModal()">&times;</button>
+            <h3 id="modal-title">-</h3>
+            <div class="modal-sub" id="modal-sub">-</div>
+            <div class="modal-chart">
+                <canvas id="candidate-chart"></canvas>
+            </div>
+        </div>
+    </div>
 </body>
 </html>"""
