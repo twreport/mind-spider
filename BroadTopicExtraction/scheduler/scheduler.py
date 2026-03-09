@@ -233,6 +233,22 @@ class MindSpiderScheduler:
             elapsed = (datetime.now() - start_time).total_seconds()
             logger.info(f"[Scheduler] {source_name} 完成，耗时 {elapsed:.2f}s")
 
+            # 写入执行指标
+            item_count = None
+            if isinstance(result, dict):
+                item_count = result.get("fetched") or result.get("item_count")
+            self._write_run_metric({
+                "source_name": source_name,
+                "started_at": start_time,
+                "finished_at": datetime.now(),
+                "duration_seconds": round(elapsed, 2),
+                "success": True,
+                "item_count": item_count,
+                "error_message": None,
+                "source_type": config.get("source_type"),
+                "category": config.get("category"),
+            })
+
             # 采集成功后触发 Layer 1 信号检测
             success = result.get("success", False) if isinstance(result, dict) else True
             collection = config.get("mongo_collection", "")
@@ -240,8 +256,27 @@ class MindSpiderScheduler:
                 self._run_signal_detection(source_name, collection)
 
         except Exception as e:
+            elapsed = (datetime.now() - start_time).total_seconds()
+            self._write_run_metric({
+                "source_name": source_name,
+                "started_at": start_time,
+                "finished_at": datetime.now(),
+                "duration_seconds": round(elapsed, 2),
+                "success": False,
+                "item_count": None,
+                "error_message": str(e),
+                "source_type": config.get("source_type"),
+                "category": config.get("category"),
+            })
             logger.error(f"[Scheduler] {source_name} 执行失败: {e}")
             raise
+
+    def _write_run_metric(self, doc: dict) -> None:
+        """写入执行指标到 crawl_runs 集合，失败不影响采集流程"""
+        try:
+            self._raw_mongo.insert_one("crawl_runs", doc)
+        except Exception as e:
+            logger.warning(f"[Scheduler] 写入 crawl_runs 失败: {e}")
 
     def _run_signal_detection(self, source_name: str, collection: str) -> None:
         """采集完成后触发 Layer 1 信号检测"""

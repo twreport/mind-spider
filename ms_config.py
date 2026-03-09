@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     LOGIN_CONSOLE_PORT: int = Field(8777, description="登录控制台端口")
     LOGIN_CONSOLE_TOKEN: str = Field("", description="登录控制台访问令牌")
 
+    # Admin Dashboard 配置
+    ADMIN_DASHBOARD_PORT: int = Field(8778, description="Admin Dashboard 端口")
+    ADMIN_DASHBOARD_TOKEN: str = Field("", description="Admin Dashboard 访问令牌，为空则不校验")
+
     class Config:
         env_file = ENV_FILE
         env_prefix = ""

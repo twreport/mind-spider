@@ -97,6 +97,30 @@ python start_deep_crawl.py --dry-run
 
 ---
 
+## 3. 浅层采集监控面板 (`BroadTopicExtraction/admin/app.py`)
+
+Web 监控面板，展示浅层采集各数据源的健康状态、数据产出趋势、错误日志。
+
+```bash
+# 启动监控面板
+python BroadTopicExtraction/admin/app.py
+
+# 指定端口
+python BroadTopicExtraction/admin/app.py --port 8778
+
+# 指定监听地址
+python BroadTopicExtraction/admin/app.py --host 127.0.0.1 --port 8778
+```
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--port` | int | 8778 | 监听端口 |
+| `--host` | string | 0.0.0.0 | 监听地址 |
+
+访问地址: `http://localhost:8778/` (如配置了 `ADMIN_DASHBOARD_TOKEN`，需加 `?token=xxx`)
+
+---
+
 ## 服务器后台部署（nohup）
 
 ```bash
@@ -136,21 +160,32 @@ nohup python DeepSentimentCrawling/start_deep_crawl.py \
 echo $! > logs/deep_crawl.pid
 ```
 
+### 浅层采集监控面板
+
+```bash
+nohup python BroadTopicExtraction/admin/app.py \
+  > logs/admin_dashboard.log 2>&1 &
+echo $! > logs/admin_dashboard.pid
+```
+
 ### 进程管理
 
 ```bash
 # 查看运行中的进程
-ps aux | grep -E "(start_scheduler|start_deep_crawl)" | grep -v grep
+ps aux | grep -E "(start_scheduler|start_deep_crawl|admin/app)" | grep -v grep
 
 # 实时查看日志
 tail -f logs/broad_scheduler.log
 tail -f logs/deep_crawl.log
+tail -f logs/admin_dashboard.log
 
 # 停止服务（通过 PID 文件）
 kill $(cat logs/broad_scheduler.pid)
 kill $(cat logs/deep_crawl.pid)
+kill $(cat logs/admin_dashboard.pid)
 
 # 停止服务（通过进程名）
 pkill -f "start_scheduler.py"
 pkill -f "start_deep_crawl.py"
+pkill -f "admin/app.py"
 ```
