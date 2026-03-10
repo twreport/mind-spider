@@ -549,13 +549,13 @@ def get_dashboard_html(token: str = "") -> str:
             for (const p of platforms) {{
                 const name = PLATFORM_NAMES[p.platform] || p.platform;
 
-                // 状态灯
-                let dotClass = 'dot-gray';
-                if (p.cookie_status === 'active') {{
-                    dotClass = p.circuit_breaker === 'open' ? 'dot-red' : 'dot-green';
-                }} else if (p.cookie_status === 'expired') {{
-                    dotClass = 'dot-red';
-                }}
+                // 状态灯：使用综合健康度
+                let dotClass = {{
+                    healthy: 'dot-green',
+                    degraded: 'dot-yellow',
+                    unhealthy: 'dot-red',
+                    unknown: 'dot-gray'
+                }}[p.health] || 'dot-gray';
 
                 const cookieTime = p.cookie_saved_at
                     ? formatTs(p.cookie_saved_at) : '-';
@@ -576,6 +576,20 @@ def get_dashboard_html(token: str = "") -> str:
                 const rate = p.stats_24h.success_rate !== null
                     ? p.stats_24h.success_rate + '%' : '-';
 
+                // 熔断事件信息
+                let circuitEventInfo = '';
+                if (p.last_circuit_event && p.last_circuit_event.timestamp) {{
+                    circuitEventInfo = `最近熔断: <span>${{formatTs(p.last_circuit_event.timestamp)}}</span> (${{p.last_circuit_event.reason || ''}})<br>`;
+                }}
+
+                // 降级原因
+                let healthNote = '';
+                if (p.health === 'degraded' && p.health_reason) {{
+                    healthNote = `<div style="color:#faad14;font-size:11px;margin-top:4px;">⚠ ${{p.health_reason}}</div>`;
+                }} else if (p.health === 'unhealthy' && p.health_reason) {{
+                    healthNote = `<div style="color:#ff4d4f;font-size:11px;margin-top:4px;">✗ ${{p.health_reason}}</div>`;
+                }}
+
                 html += `
                 <div class="plat-card">
                     <div class="plat-header">
@@ -585,8 +599,9 @@ def get_dashboard_html(token: str = "") -> str:
                     <div class="plat-detail">
                         Cookie: <span>${{p.cookie_status}}</span> (${{cookieTime}})<br>
                         熔断器: ${{circuit}}<br>
-                        最近任务: ${{lastInfo}}<br>
+                        ${{circuitEventInfo}}最近任务: ${{lastInfo}}<br>
                         24h 成功率: <span>${{rate}}</span> (${{p.stats_24h.completed}}/${{p.stats_24h.total}})
+                        ${{healthNote}}
                     </div>
                 </div>`;
             }}

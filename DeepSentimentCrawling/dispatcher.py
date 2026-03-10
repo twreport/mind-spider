@@ -122,6 +122,19 @@ class TaskDispatcher:
 
     # ==================== 熔断器 ====================
 
+    def _log_circuit_event(self, platform: str, event: str, reason: str = ""):
+        """记录熔断器事件到 MongoDB"""
+        try:
+            col = self.mongo.get_collection("circuit_events")
+            col.insert_one({
+                "platform": platform,
+                "event": event,        # "open" | "closed"
+                "reason": reason,
+                "timestamp": int(time.time()),
+            })
+        except Exception as e:
+            logger.warning(f"[Dispatcher] circuit_events 写入失败: {e}")
+
     def _is_circuit_open(self, platform: str) -> bool:
         if not self.circuit_open.get(platform, False):
             return False
@@ -131,6 +144,7 @@ class TaskDispatcher:
             self.circuit_open[platform] = False
             self.failure_counts[platform] = 0
             logger.info(f"[Dispatcher] {platform} cookie 已更新，熔断器恢复")
+            self._log_circuit_event(platform, "closed", "cookie 已更新")
             return False
         return True
 
@@ -140,6 +154,7 @@ class TaskDispatcher:
         # 熔断时标记 cookie 失效，等用户更新后恢复
         self.cookie_manager.mark_expired(platform)
         alert_circuit_open(platform, reason)
+        self._log_circuit_event(platform, "open", reason)
 
     # ==================== 任务获取 ====================
 

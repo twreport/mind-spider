@@ -120,7 +120,7 @@ def get_overview(mongo, dispatcher=None) -> Dict:
 
 def get_platform_health(mongo, cookie_manager=None, dispatcher=None) -> List[Dict]:
     """
-    7 平台健康看板：cookie 状态、熔断器、最近任务、成功率。
+    7 平台健康看板：cookie 状态、熔断器、最近任务、成功率、综合健康度。
     """
     from DeepSentimentCrawling.dispatcher import ALL_PLATFORMS
 
@@ -135,6 +135,9 @@ def get_platform_health(mongo, cookie_manager=None, dispatcher=None) -> List[Dic
         for s in cookie_manager.get_all_status():
             cookie_statuses[s["platform"]] = s
 
+    # 熔断器事件集合
+    circuit_col = mongo.get_collection("circuit_events")
+
     result = []
     for plat in ALL_PLATFORMS:
         # cookie 信息
@@ -142,10 +145,26 @@ def get_platform_health(mongo, cookie_manager=None, dispatcher=None) -> List[Dic
         cookie_status = cs.get("status", "missing")
         cookie_saved_at = cs.get("saved_at")
 
-        # 熔断器状态
+        # 熔断器状态（内存）
         circuit = "closed"
         if dispatcher:
             circuit = "open" if dispatcher.circuit_open.get(plat, False) else "closed"
+
+        # 最近熔断事件（MongoDB 持久化）
+        last_circuit_event = None
+        try:
+            evt = circuit_col.find_one(
+                {"platform": plat},
+                sort=[("timestamp", -1)],
+            )
+            if evt:
+                last_circuit_event = {
+                    "event": evt.get("event"),
+                    "reason": evt.get("reason", ""),
+                    "timestamp": evt.get("timestamp"),
+                }
+        except Exception:
+            pass
 
         # 最近一个任务
         last_task_doc = col.find_one(
@@ -177,12 +196,50 @@ def get_platform_health(mongo, cookie_manager=None, dispatcher=None) -> List[Dic
         )
         success_rate = round(completed_24h / total_24h * 100, 1) if total_24h > 0 else None
 
+        # 检测最近 3 个 completed 任务是否全部 0 结果
+        all_recent_zero = False
+        if completed_24h > 0:
+            recent_completed = list(col.find(
+                {"platform": plat, "status": "completed"},
+                {"total_crawled": 1, "_id": 0},
+                sort=[("completed_at", -1)],
+                limit=3,
+            ))
+            if recent_completed and all(
+                doc.get("total_crawled", 0) == 0 for doc in recent_completed
+            ):
+                all_recent_zero = True
+
+        # 综合健康度判定
+        health = "unknown"
+        health_reason = ""
+        if cookie_status == "missing":
+            health = "unknown"
+        elif cookie_status == "expired" or circuit == "open":
+            health = "unhealthy"
+            health_reason = "cookie 过期" if cookie_status == "expired" else "熔断器开启"
+        elif (
+            last_circuit_event
+            and last_circuit_event["event"] == "open"
+            and (now - last_circuit_event["timestamp"]) < 3600
+        ):
+            health = "degraded"
+            health_reason = "近 1 小时内熔断过"
+        elif completed_24h > 0 and all_recent_zero:
+            health = "degraded"
+            health_reason = "近期爬取 0 结果"
+        else:
+            health = "healthy"
+
         result.append(
             {
                 "platform": plat,
                 "cookie_status": cookie_status,
                 "cookie_saved_at": cookie_saved_at,
                 "circuit_breaker": circuit,
+                "last_circuit_event": last_circuit_event,
+                "health": health,
+                "health_reason": health_reason,
                 "last_task": last_task,
                 "stats_24h": {
                     "total": total_24h,

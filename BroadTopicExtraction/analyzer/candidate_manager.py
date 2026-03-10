@@ -38,7 +38,7 @@ CRAWL_TASKS_COLLECTION = "crawl_tasks"
 # 按候选状态定义爬取规模（只在进入对应状态时触发）
 _CRAWL_SCALE = {
     # "rising":    {"platforms": 3, "max_notes": 10, "priority": 1},
-    "confirmed": {"platforms": 5, "max_notes": 30, "priority": 2},
+    "confirmed": {"platforms": 7, "max_notes": 30, "priority": 2},
     "exploded":  {"platforms": 7, "max_notes": 20, "priority": 3},
 }
 
