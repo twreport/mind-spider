@@ -677,8 +677,8 @@ def get_dashboard_html(token: str = "") -> str:
                 }};
                 const [bg, color] = statusMap[c.status] || ['#f5f5f5', '#999'];
 
-                // 热度条：相对于第一名的比例
-                const maxOfAll = candidates[0].max_score || 1;
+                // 热度条：相对于所有候选中最高分的比例
+                const maxOfAll = Math.max(...candidates.map(x => x.max_score || 0)) || 1;
                 const pct = Math.round(c.max_score / maxOfAll * 100);
                 const barColor = c.triggered ? '#f5222d' : c.confirmed ? '#fa8c16' : '#1890ff';
 
