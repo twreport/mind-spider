@@ -326,12 +326,25 @@ class TaskDispatcher:
         status = result.get("status", "failed")
 
         if status == "success":
+            total_crawled = result.get("total_crawled", 0)
             self._update_task_status(task_id, {
                 "status": "completed",
                 "completed_at": int(time.time()),
+                "total_crawled": total_crawled,
+                "success_count": total_crawled,
             })
             self.failure_counts[platform] = 0
-            logger.info(f"[Dispatcher] 任务 {task_id} 完成")
+            logger.info(f"[Dispatcher] 任务 {task_id} 完成, 爬取 {total_crawled} 条")
+
+            # 连续空结果计入失败计数，触发熔断以避免浪费后续任务
+            if total_crawled == 0:
+                self.failure_counts[platform] = self.failure_counts.get(platform, 0) + 1
+                logger.warning(
+                    f"[Dispatcher] 任务 {task_id} 爬取 0 条内容，"
+                    f"{platform} 连续空结果 {self.failure_counts[platform]} 次"
+                )
+                if self.failure_counts[platform] >= self.CIRCUIT_THRESHOLD:
+                    self._trip_circuit(platform, f"连续 {self.CIRCUIT_THRESHOLD} 次爬取 0 条内容")
 
         elif status == "blocked":
             # cookie 缺失，退回 pending（不计入重试）

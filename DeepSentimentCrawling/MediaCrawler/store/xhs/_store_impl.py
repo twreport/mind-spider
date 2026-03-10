@@ -120,6 +120,8 @@ class XhsDbStoreImplement(AbstractStore):
             tag_list=json.dumps(content_item.get("tag_list")),
             note_url=content_item.get("note_url"),
             source_keyword=content_item.get("source_keyword", ""),
+            topic_id=content_item.get("topic_id", ""),
+            crawling_task_id=content_item.get("crawling_task_id", ""),
             xsec_token=content_item.get("xsec_token", "")
         )
         session.add(note)

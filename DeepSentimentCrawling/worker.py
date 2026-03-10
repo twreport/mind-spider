@@ -121,8 +121,10 @@ class PlatformWorker:
 
             await crawler.start()
 
-            logger.info(f"[Worker] 任务 {task_id} 执行成功")
-            return {"status": "success"}
+            # 6. 获取实际爬取数量
+            crawled_count = self._get_crawled_count(crawler)
+            logger.info(f"[Worker] 任务 {task_id} 执行成功, 爬取 {crawled_count} 条内容")
+            return {"status": "success", "total_crawled": crawled_count}
 
         except Exception as e:
             error_msg = f"{type(e).__name__}: {e}"
@@ -137,5 +139,15 @@ class PlatformWorker:
             return {"status": "failed", "error": error_msg}
 
         finally:
-            # 6. 恢复 config 快照
+            # 7. 恢复 config 快照
             _restore_config(saved_config)
+
+    @staticmethod
+    def _get_crawled_count(crawler) -> int:
+        """从 crawler 实例获取实际爬取的内容数量"""
+        for attr in ("_crawled_note_ids", "_crawled_aweme_ids",
+                     "_crawled_video_ids", "_crawled_content_ids"):
+            ids = getattr(crawler, attr, None)
+            if ids is not None:
+                return len(ids)
+        return 0

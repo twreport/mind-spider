@@ -106,6 +106,14 @@ class DouYinCrawler(AbstractCrawler):
             # 等待页面 JS 初始化完成（设置 localStorage 等）
             await asyncio.sleep(3)
 
+            # 检测首页是否被验证码拦截
+            page_title = await self.context_page.title()
+            if "验证" in page_title:
+                utils.logger.error(
+                    f"[DouYinCrawler] 首页被验证码拦截 (title={page_title})，cookie 可能失效"
+                )
+                raise Exception(f"cookie失效: 首页验证码拦截 (title={page_title})")
+
             self.dy_client = await self.create_douyin_client(httpx_proxy_format)
             if config.LOGIN_TYPE == "cookie" and config.COOKIES:
                 # cookie 模式：已在导航前注入，跳过 pong/login 流程

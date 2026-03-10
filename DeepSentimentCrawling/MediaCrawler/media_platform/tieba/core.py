@@ -111,6 +111,11 @@ class TieBaCrawler(AbstractCrawler):
                 # 检查首页是否正常加载
                 page_title = await self.context_page.title()
                 utils.logger.info(f"[BaiduTieBaCrawler] 贴吧首页 title: {page_title}, URL: {self.context_page.url}")
+                if "安全验证" in page_title or "百度安全" in page_title:
+                    utils.logger.error(
+                        f"[BaiduTieBaCrawler] 首页触发百度安全验证，cookie 失效"
+                    )
+                    raise Exception(f"cookie失效: 贴吧首页安全验证 (title={page_title})")
             else:
                 # 非 cookie 模式：通过百度首页跳转，降低安全验证概率
                 await self._navigate_to_tieba_via_baidu()
