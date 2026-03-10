@@ -175,6 +175,14 @@ def get_dashboard_html(token: str = "") -> str:
         .cr-topic {{ max-width: 260px; cursor: pointer; color: #1890ff; }}
         .cr-topic:hover {{ text-decoration: underline; }}
 
+        /* 可排序表头 */
+        .sortable-th {{
+            cursor: pointer; user-select: none; white-space: nowrap;
+        }}
+        .sortable-th:hover {{ background: #e6f7ff; }}
+        .sort-arrow {{ font-size: 10px; margin-left: 2px; color: #ccc; }}
+        .sort-arrow.active {{ color: #1890ff; }}
+
         /* 内容弹窗 tab */
         .tab-bar {{
             display: flex; gap: 0; border-bottom: 2px solid #f0f0f0; margin-bottom: 12px;
@@ -239,11 +247,11 @@ def get_dashboard_html(token: str = "") -> str:
                     <th>排名</th>
                     <th>话题</th>
                     <th>状态</th>
-                    <th>最高热度</th>
-                    <th>当前热度</th>
-                    <th>跨平台数</th>
-                    <th>深爬触发</th>
-                    <th>首次出现</th>
+                    <th class="sortable-th" onclick="sortCandidates('max_score')">最高热度 <span id="sort-arrow-max_score" class="sort-arrow active">▼</span></th>
+                    <th class="sortable-th" onclick="sortCandidates('current_score')">当前热度 <span id="sort-arrow-current_score" class="sort-arrow">▼</span></th>
+                    <th class="sortable-th" onclick="sortCandidates('platform_count')">跨平台数 <span id="sort-arrow-platform_count" class="sort-arrow">▼</span></th>
+                    <th class="sortable-th" onclick="sortCandidates('triggered_at')">深爬触发 <span id="sort-arrow-triggered_at" class="sort-arrow">▼</span></th>
+                    <th class="sortable-th" onclick="sortCandidates('first_seen_at')">首次出现 <span id="sort-arrow-first_seen_at" class="sort-arrow">▼</span></th>
                 </tr>
             </thead>
             <tbody id="candidates-table-body">
@@ -437,12 +445,58 @@ def get_dashboard_html(token: str = "") -> str:
             }}
         }}
 
+        // --- 候选排序状态 ---
+        let _candidatesData = [];
+        let _candidatesSortKey = 'max_score';
+        let _candidatesSortAsc = false;
+
         async function loadCandidates() {{
             try {{
                 const data = await fetchJSON('/dashboard/api/top-candidates?limit=10');
-                renderCandidates(data);
+                _candidatesData = data || [];
+                sortAndRenderCandidates();
             }} catch (e) {{
                 console.error('加载候选话题失败:', e);
+            }}
+        }}
+
+        function sortCandidates(key) {{
+            if (key === _candidatesSortKey) {{
+                _candidatesSortAsc = !_candidatesSortAsc;
+            }} else {{
+                _candidatesSortKey = key;
+                _candidatesSortAsc = false;
+            }}
+            sortAndRenderCandidates();
+        }}
+
+        function sortAndRenderCandidates() {{
+            const sorted = [..._candidatesData];
+            const key = _candidatesSortKey;
+            const asc = _candidatesSortAsc;
+            sorted.sort((a, b) => {{
+                const va = a[key], vb = b[key];
+                // null 值始终排最后
+                if (va == null && vb == null) return 0;
+                if (va == null) return 1;
+                if (vb == null) return -1;
+                if (va < vb) return asc ? -1 : 1;
+                if (va > vb) return asc ? 1 : -1;
+                return 0;
+            }});
+            renderCandidates(sorted);
+            // 更新箭头
+            const sortKeys = ['max_score', 'current_score', 'platform_count', 'triggered_at', 'first_seen_at'];
+            for (const k of sortKeys) {{
+                const el = document.getElementById('sort-arrow-' + k);
+                if (!el) continue;
+                if (k === _candidatesSortKey) {{
+                    el.textContent = _candidatesSortAsc ? '▲' : '▼';
+                    el.className = 'sort-arrow active';
+                }} else {{
+                    el.textContent = '▼';
+                    el.className = 'sort-arrow';
+                }}
             }}
         }}
 
@@ -631,6 +685,7 @@ def get_dashboard_html(token: str = "") -> str:
                 let triggerLabel = '<span style="color:#ccc;">—</span>';
                 if (c.triggered) triggerLabel = '<span style="color:#f5222d; font-weight:600;">exploded</span>';
                 else if (c.confirmed) triggerLabel = '<span style="color:#fa8c16; font-weight:600;">confirmed</span>';
+                if (c.triggered_at) triggerLabel += '<br><span style="font-size:11px;color:#888;">' + formatTs(c.triggered_at) + '</span>';
 
                 html += `<tr>
                     <td style="font-weight:600; color:#888;">${{i + 1}}</td>

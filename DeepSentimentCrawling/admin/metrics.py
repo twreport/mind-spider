@@ -238,6 +238,7 @@ def get_top_candidates(mongo, limit: int = 10) -> List[Dict]:
                 "canonical_title": 1,
                 "status": 1,
                 "snapshots": 1,
+                "status_history": 1,
                 "first_seen_at": 1,
                 "updated_at": 1,
                 "platform_count": 1,
@@ -252,6 +253,14 @@ def get_top_candidates(mongo, limit: int = 10) -> List[Dict]:
             continue
         max_score = max(s.get("score_pos", 0) for s in snaps)
         cur_score = snaps[-1].get("score_pos", 0)
+
+        # 从 status_history 中找第一个 confirmed 的时间作为 triggered_at
+        triggered_at = None
+        for h in doc.get("status_history", []):
+            if h.get("status") == "confirmed":
+                triggered_at = h.get("ts")
+                break
+
         candidates.append(
             {
                 "candidate_id": doc.get("candidate_id", ""),
@@ -262,6 +271,7 @@ def get_top_candidates(mongo, limit: int = 10) -> List[Dict]:
                 "platform_count": doc.get("platform_count", 0),
                 "first_seen_at": doc.get("first_seen_at"),
                 "updated_at": doc.get("updated_at"),
+                "triggered_at": triggered_at,
                 "triggered": max_score >= 10000,
                 "confirmed": max_score >= 4000,
             }
