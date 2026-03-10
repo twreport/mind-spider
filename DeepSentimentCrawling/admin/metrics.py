@@ -220,8 +220,8 @@ def get_task_list(
 
 
 def get_top_candidates(
-    mongo, limit: int = 10, sort_key: str = "max_score", sort_order: str = "desc"
-) -> List[Dict]:
+    mongo, limit: int = 10, offset: int = 0, sort_key: str = "max_score", sort_order: str = "desc"
+) -> Dict:
     """
     24 小时内热度最高的候选话题。
 
@@ -293,7 +293,8 @@ def get_top_candidates(
         return (0, v)
 
     candidates.sort(key=_sort_val, reverse=reverse)
-    return candidates[:limit]
+    total = len(candidates)
+    return {"total": total, "items": candidates[offset:offset + limit]}
 
 
 def get_candidate_detail(mongo, candidate_id: str) -> Optional[Dict]:

@@ -240,7 +240,7 @@ def get_dashboard_html(token: str = "") -> str:
 
     <!-- 热门候选话题 -->
     <div class="section">
-        <h2>24h 热门候选 TOP 10</h2>
+        <h2>24h 热门候选</h2>
         <table>
             <thead>
                 <tr>
@@ -258,6 +258,11 @@ def get_dashboard_html(token: str = "") -> str:
                 <tr><td colspan="8" style="text-align:center; color:#aaa;">加载中...</td></tr>
             </tbody>
         </table>
+        <div class="pagination">
+            <button onclick="prevCandidatePage()">上一页</button>
+            <span id="candidate-page-info">第 1 页</span>
+            <button onclick="nextCandidatePage()">下一页</button>
+        </div>
     </div>
 
     <!-- 任务列表 -->
@@ -448,12 +453,15 @@ def get_dashboard_html(token: str = "") -> str:
         // --- 候选排序状态 ---
         let _candidatesSortKey = 'max_score';
         let _candidatesSortAsc = false;
+        let _candidatePage = 0;
+        const CANDIDATE_PAGE_SIZE = 10;
 
         async function loadCandidates() {{
             try {{
                 const order = _candidatesSortAsc ? 'asc' : 'desc';
-                const data = await fetchJSON(`/dashboard/api/top-candidates?limit=10&sort_key=${{_candidatesSortKey}}&sort_order=${{order}}`);
-                renderCandidates(data || []);
+                const offset = _candidatePage * CANDIDATE_PAGE_SIZE;
+                const data = await fetchJSON(`/dashboard/api/top-candidates?limit=${{CANDIDATE_PAGE_SIZE}}&offset=${{offset}}&sort_key=${{_candidatesSortKey}}&sort_order=${{order}}`);
+                renderCandidates(data || {{}});
                 updateSortArrows();
             }} catch (e) {{
                 console.error('加载候选话题失败:', e);
@@ -467,6 +475,7 @@ def get_dashboard_html(token: str = "") -> str:
                 _candidatesSortKey = key;
                 _candidatesSortAsc = false;
             }}
+            _candidatePage = 0;
             loadCandidates();
         }}
 
@@ -642,15 +651,22 @@ def get_dashboard_html(token: str = "") -> str:
             }}
         }}
 
-        function renderCandidates(candidates) {{
+        function renderCandidates(data) {{
             const tbody = document.getElementById('candidates-table-body');
-            if (!candidates || !candidates.length) {{
+            const candidates = data.items || [];
+            const total = data.total || 0;
+            if (!candidates.length) {{
                 tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#aaa;">24h 内暂无候选话题</td></tr>';
+                document.getElementById('candidate-page-info').textContent = '第 0 / 0 页 (共 0 条)';
                 return;
             }}
+            const totalPages = Math.ceil(total / CANDIDATE_PAGE_SIZE);
+            document.getElementById('candidate-page-info').textContent =
+                `第 ${{_candidatePage + 1}} / ${{totalPages}} 页 (共 ${{total}} 条)`;
             let html = '';
             for (let i = 0; i < candidates.length; i++) {{
                 const c = candidates[i];
+                const rank = _candidatePage * CANDIDATE_PAGE_SIZE + i + 1;
                 const statusMap = {{
                     emerging: ['#e6f7ff', '#1890ff'],
                     rising: ['#fff7e6', '#fa8c16'],
@@ -673,7 +689,7 @@ def get_dashboard_html(token: str = "") -> str:
                 if (c.triggered_at) triggerLabel += '<br><span style="font-size:11px;color:#888;">' + formatTs(c.triggered_at) + '</span>';
 
                 html += `<tr>
-                    <td style="font-weight:600; color:#888;">${{i + 1}}</td>
+                    <td style="font-weight:600; color:#888;">${{rank}}</td>
                     <td style="max-width:280px;">
                         <div class="clickable" onclick="showCandidateChart('${{c.candidate_id}}')">${{escapeHtml(c.title)}}</div>
                         <div style="margin-top:4px; height:4px; border-radius:2px; background:#f0f0f0;">
@@ -1023,6 +1039,14 @@ def get_dashboard_html(token: str = "") -> str:
         function nextPage() {{
             currentPage++;
             loadTasks();
+        }}
+
+        function prevCandidatePage() {{
+            if (_candidatePage > 0) {{ _candidatePage--; loadCandidates(); }}
+        }}
+        function nextCandidatePage() {{
+            _candidatePage++;
+            loadCandidates();
         }}
 
         // --- 初始化 & 自动刷新 ---

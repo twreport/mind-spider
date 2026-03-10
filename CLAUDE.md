@@ -63,3 +63,4 @@ uv run pytest tests/ -v
 
 - 爬虫调试必读 `PLATFORM_DEBUG_NOTES.md`
 - 设计文档: `HOTSPOT_METHODOLOGY.md` | 实现计划: `PHASE_1_2_PLAN.md` | 部署: `DEPLOYMENT.md`
+- 如果需要了解爬取数据展示方面的问题打开 `DASHBOARD.md` 查看
