@@ -132,9 +132,9 @@ class PlatformWorker:
 
             # 检查是否为 cookie 过期相关错误（只检查错误前 200 字符，避免 Chrome 启动参数误匹配）
             short_err = error_msg[:200].lower()
-            if any(kw in short_err for kw in ["login", "cookie", "auth", "403", "未登录"]):
+            if any(kw in short_err for kw in ["login", "cookie", "auth", "403", "未登录", "百度安全验证"]):
                 self.cookie_manager.mark_expired(platform)
-                return {"status": "failed", "error": error_msg, "cookie_expired": True}
+                return {"status": "blocked", "reason": "cookie_expired", "error": error_msg}
 
             return {"status": "failed", "error": error_msg}
 

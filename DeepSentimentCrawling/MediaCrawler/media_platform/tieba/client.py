@@ -240,7 +240,7 @@ class BaiduTieBaClient(AbstractApiClient):
             # 检测是否为安全验证页
             if "百度安全验证" in page_content[:500]:
                 utils.logger.warning("[BaiduTieBaClient.get_notes_by_keyword] 触发百度安全验证，cookie 可能无效")
-                return []
+                raise Exception("百度安全验证: cookie 无效或 IP 被临时封锁")
 
             notes = self._page_extractor.extract_search_note_list(page_content)
             utils.logger.info(f"[BaiduTieBaClient.get_notes_by_keyword] 提取到 {len(notes)} 条帖子")
@@ -462,7 +462,7 @@ class BaiduTieBaClient(AbstractApiClient):
 
             if "百度安全验证" in page_content[:500]:
                 utils.logger.warning("[BaiduTieBaClient.get_notes_by_tieba_name] 触发百度安全验证")
-                return []
+                raise Exception("百度安全验证: cookie 无效或 IP 被临时封锁")
 
             notes = self._page_extractor.extract_tieba_note_list(page_content)
             utils.logger.info(f"[BaiduTieBaClient.get_notes_by_tieba_name] 提取到 {len(notes)} 条帖子")
