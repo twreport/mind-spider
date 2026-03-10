@@ -347,9 +347,11 @@ class TaskDispatcher:
                     self._trip_circuit(platform, f"连续 {self.CIRCUIT_THRESHOLD} 次爬取 0 条内容")
 
         elif status == "blocked":
-            # cookie 缺失，退回 pending（不计入重试）
+            # cookie 缺失，退回 pending 并触发熔断器（避免每 10 秒无限重试）
             self._update_task_status(task_id, {"status": "pending"})
             logger.warning(f"[Dispatcher] 任务 {task_id} 因 cookie 缺失阻塞")
+            if not self._is_circuit_open(platform):
+                self._trip_circuit(platform, "cookie 缺失")
 
         else:
             # 失败处理

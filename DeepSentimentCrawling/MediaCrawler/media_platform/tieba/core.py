@@ -50,12 +50,32 @@ class TieBaCrawler(AbstractCrawler):
         self.cdp_manager = None
         self._crawled_note_ids: set = set()
 
+    # 固定 Chrome UA，与 curl fallback 一致，避免启动 Playwright 仅为提取 UA
+    CHROME_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
     async def start(self) -> None:
         """
         Start the crawler
         Returns:
 
         """
+        # Cookie 模式：跳过 Playwright，直接用 curl 抓取
+        # Playwright 访问 tieba.baidu.com 会触发百度安全验证，导致 cookie 被误标过期
+        if config.LOGIN_TYPE == "cookie" and config.COOKIES:
+            utils.logger.info("[BaiduTieBaCrawler] Cookie 模式，跳过 Playwright，使用 curl-only 路径")
+            self.tieba_client = self._create_tieba_client_without_browser()
+            crawler_type_var.set(config.CRAWLER_TYPE)
+            if config.CRAWLER_TYPE == "search":
+                await self.search()
+                await self.get_specified_tieba_notes()
+            elif config.CRAWLER_TYPE == "detail":
+                await self.get_specified_notes()
+            elif config.CRAWLER_TYPE == "creator":
+                await self.get_creators_and_notes()
+            utils.logger.info("[BaiduTieBaCrawler.start] Tieba Crawler finished (cookie/curl-only mode)")
+            return
+
+        # 非 cookie 模式：启动 Playwright 浏览器
         playwright_proxy_format, httpx_proxy_format = None, None
         if config.ENABLE_IP_PROXY:
             utils.logger.info(
@@ -96,29 +116,8 @@ class TieBaCrawler(AbstractCrawler):
 
             self.context_page = await self.browser_context.new_page()
 
-            # cookie 模式：注入 cookie 后直接访问贴吧，无需绕道百度首页
-            if config.LOGIN_TYPE == "cookie" and config.COOKIES:
-                for key, value in utils.convert_str_cookie_to_dict(config.COOKIES).items():
-                    await self.browser_context.add_cookies([{
-                        'name': key,
-                        'value': value,
-                        'domain': ".baidu.com",
-                        'path': "/"
-                    }])
-                utils.logger.info("[BaiduTieBaCrawler] Cookie 模式，已注入 cookie，直接访问贴吧首页")
-                await self.context_page.goto(self.index_url, wait_until="domcontentloaded")
-                await asyncio.sleep(2)
-                # 检查首页是否正常加载
-                page_title = await self.context_page.title()
-                utils.logger.info(f"[BaiduTieBaCrawler] 贴吧首页 title: {page_title}, URL: {self.context_page.url}")
-                if "安全验证" in page_title or "百度安全" in page_title:
-                    utils.logger.error(
-                        f"[BaiduTieBaCrawler] 首页触发百度安全验证，cookie 失效"
-                    )
-                    raise Exception(f"cookie失效: 贴吧首页安全验证 (title={page_title})")
-            else:
-                # 非 cookie 模式：通过百度首页跳转，降低安全验证概率
-                await self._navigate_to_tieba_via_baidu()
+            # 非 cookie 模式：通过百度首页跳转，降低安全验证概率
+            await self._navigate_to_tieba_via_baidu()
 
             # Create a client to interact with the baidutieba website.
             self.tieba_client = await self.create_tieba_client(
@@ -127,11 +126,7 @@ class TieBaCrawler(AbstractCrawler):
             )
 
             # Check login status and perform login if necessary
-            if config.LOGIN_TYPE == "cookie" and config.COOKIES:
-                # cookie 模式：跳过 pong/login
-                utils.logger.info("[BaiduTieBaCrawler] Cookie 模式，跳过 pong/login")
-                await self.tieba_client.update_cookies(browser_context=self.browser_context)
-            elif not await self.tieba_client.pong(browser_context=self.browser_context):
+            if not await self.tieba_client.pong(browser_context=self.browser_context):
                 login_obj = BaiduTieBaLogin(
                     login_type=config.LOGIN_TYPE,
                     login_phone="",  # your phone number
@@ -565,6 +560,39 @@ class TieBaCrawler(AbstractCrawler):
 
         await self.browser_context.add_init_script(anti_detection_js)
         utils.logger.info("[TieBaCrawler] Anti-detection scripts injected")
+
+    def _create_tieba_client_without_browser(self) -> BaiduTieBaClient:
+        """
+        Cookie 模式专用：不启动 Playwright，直接用 cookie + 固定 UA 构建 client。
+        贴吧实际数据抓取全部使用 curl 子进程（绕过 TLS 指纹），不需要 Playwright。
+        """
+        cookie_str = config.COOKIES
+        ua = self.CHROME_UA
+
+        tieba_client = BaiduTieBaClient(
+            timeout=10,
+            headers={
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                "Accept-Language": "zh-CN,zh;q=0.9",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Connection": "keep-alive",
+                "User-Agent": ua,
+                "Cookie": cookie_str,
+                "Host": "tieba.baidu.com",
+                "Referer": "https://tieba.baidu.com/",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "same-origin",
+                "Sec-Fetch-User": "?1",
+                "Upgrade-Insecure-Requests": "1",
+                "sec-ch-ua": '"Google Chrome";v="131", "Not?A_Brand";v="8", "Chromium";v="131"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Windows"',
+            },
+            playwright_page=None,
+        )
+        utils.logger.info(f"[TieBaCrawler] Cookie-only client 已创建 (UA: {ua[:50]}...)")
+        return tieba_client
 
     async def create_tieba_client(
         self, httpx_proxy: Optional[str], ip_pool: Optional[ProxyIpPool] = None
