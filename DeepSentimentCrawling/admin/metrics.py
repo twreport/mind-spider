@@ -3,13 +3,86 @@
 指标查询模块
 
 从 MongoDB crawl_tasks / platform_cookies 聚合深层采集指标。
+从 MySQL fish 库查询爬取结果内容数据。
 """
 
+import json
 import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
+from urllib.parse import quote_plus
 
 from loguru import logger
+from sqlalchemy import create_engine, text
+
+from ms_config import settings
+
+# --- MySQL fish 库连接 ---
+
+_fish_engine = None
+
+
+def _get_fish_engine():
+    global _fish_engine
+    if _fish_engine is None:
+        _fish_engine = create_engine(
+            f"mysql+pymysql://{settings.DB_USER}:{quote_plus(settings.DB_PASSWORD)}"
+            f"@{settings.DB_HOST}:{settings.DB_PORT}/fish?charset={settings.DB_CHARSET}",
+            pool_recycle=3600,
+            pool_pre_ping=True,
+        )
+    return _fish_engine
+
+
+# 平台表映射：content=内容表, comment=评论表, id_col=内容ID列
+PLATFORM_TABLES = {
+    "xhs": {"content": "xhs_note", "comment": "xhs_note_comment", "id_col": "note_id"},
+    "dy": {"content": "douyin_aweme", "comment": "douyin_aweme_comment", "id_col": "aweme_id"},
+    "ks": {"content": "kuaishou_video", "comment": "kuaishou_video_comment", "id_col": "video_id"},
+    "bili": {"content": "bilibili_video", "comment": "bilibili_video_comment", "id_col": "video_id"},
+    "wb": {"content": "weibo_note", "comment": "weibo_note_comment", "id_col": "note_id"},
+    "tieba": {"content": "tieba_note", "comment": "tieba_comment", "id_col": "note_id"},
+    "zhihu": {"content": "zhihu_content", "comment": "zhihu_comment", "id_col": "content_id"},
+}
+
+# 各平台字段映射 → 统一为 nickname, title, liked_count, comment_count, share_count, create_time
+PLATFORM_FIELD_MAP = {
+    "xhs": {
+        "nickname": "nickname", "title": "title", "desc": "desc",
+        "liked": "liked_count", "comment": "comment_count", "share": "share_count",
+        "time": "time",
+    },
+    "dy": {
+        "nickname": "nickname", "title": "title", "desc": "desc",
+        "liked": "liked_count", "comment": "comment_count", "share": "share_count",
+        "time": "create_time",
+    },
+    "ks": {
+        "nickname": "nickname", "title": "title", "desc": "desc",
+        "liked": "liked_count", "comment": None, "share": None,
+        "time": "create_time",
+    },
+    "bili": {
+        "nickname": "nickname", "title": "title", "desc": "desc",
+        "liked": "liked_count", "comment": "video_comment", "share": "video_share_count",
+        "time": "create_time",
+    },
+    "wb": {
+        "nickname": "nickname", "title": None, "desc": "content",
+        "liked": "liked_count", "comment": "comments_count", "share": "shared_count",
+        "time": "create_time",
+    },
+    "tieba": {
+        "nickname": "user_nickname", "title": "title", "desc": "desc",
+        "liked": None, "comment": "total_replay_num", "share": None,
+        "time": "publish_time",
+    },
+    "zhihu": {
+        "nickname": "user_nickname", "title": "title", "desc": "content_text",
+        "liked": "voteup_count", "comment": "comment_count", "share": None,
+        "time": "created_time",
+    },
+}
 
 
 def get_overview(mongo, dispatcher=None) -> Dict:
@@ -296,3 +369,192 @@ def get_volume_trend(mongo, hours: int = 48) -> Dict[str, List[Dict]]:
             result[plat] = []
 
     return result
+
+
+# --- MySQL fish 库查询 ---
+
+
+def get_crawl_results(limit: int = 20) -> List[Dict]:
+    """
+    爬取结果总览 — 按话题聚合各平台内容数 + 评论数。
+
+    从 crawling_tasks 按 topic_id 分组，取最近 N 个话题，
+    再统计每个话题在各平台的内容数和评论数。
+    """
+    try:
+        engine = _get_fish_engine()
+        with engine.connect() as conn:
+            # 1. 查最近 N 个不同 topic_id 及其话题名
+            topic_rows = conn.execute(
+                text(
+                    "SELECT topic_id, config_params, MAX(scheduled_date) AS last_date "
+                    "FROM crawling_tasks "
+                    "WHERE topic_id IS NOT NULL AND topic_id != '' "
+                    "GROUP BY topic_id, config_params "
+                    "ORDER BY last_date DESC "
+                    "LIMIT :limit"
+                ),
+                {"limit": limit},
+            ).fetchall()
+
+            if not topic_rows:
+                return []
+
+            # 去重 topic_id（config_params 可能不同但 topic_id 相同）
+            seen = set()
+            topics = []
+            for row in topic_rows:
+                tid = row[0]
+                if tid in seen:
+                    continue
+                seen.add(tid)
+                # 从 config_params JSON 提取 topic_title
+                topic_name = tid
+                try:
+                    params = json.loads(row[1]) if row[1] else {}
+                    topic_name = params.get("topic_title", tid)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+                topics.append({"topic_id": tid, "topic_name": topic_name, "last_date": str(row[2])})
+
+            # 2. 对每个话题，查各平台内容数和评论数
+            results = []
+            for topic in topics:
+                tid = topic["topic_id"]
+                # 获取该话题的所有 task_id
+                task_rows = conn.execute(
+                    text("SELECT task_id FROM crawling_tasks WHERE topic_id = :tid"),
+                    {"tid": tid},
+                ).fetchall()
+                task_ids = [r[0] for r in task_rows]
+                if not task_ids:
+                    continue
+
+                placeholders = ",".join([f":t{i}" for i in range(len(task_ids))])
+                params = {f"t{i}": v for i, v in enumerate(task_ids)}
+
+                platform_counts = {}
+                total_content = 0
+                total_comments = 0
+
+                for plat, tbl in PLATFORM_TABLES.items():
+                    # 内容数
+                    content_sql = (
+                        f"SELECT COUNT(*) FROM {tbl['content']} "
+                        f"WHERE crawling_task_id IN ({placeholders})"
+                    )
+                    cnt = conn.execute(text(content_sql), params).scalar() or 0
+
+                    # 评论数
+                    comment_sql = (
+                        f"SELECT COUNT(*) FROM {tbl['comment']} c "
+                        f"INNER JOIN {tbl['content']} p ON c.{tbl['id_col']} = p.{tbl['id_col']} "
+                        f"WHERE p.crawling_task_id IN ({placeholders})"
+                    )
+                    cmt = conn.execute(text(comment_sql), params).scalar() or 0
+
+                    platform_counts[plat] = {"content": cnt, "comments": cmt}
+                    total_content += cnt
+                    total_comments += cmt
+
+                results.append({
+                    "topic_id": tid,
+                    "topic_name": topic["topic_name"],
+                    "last_date": topic["last_date"],
+                    "platforms": platform_counts,
+                    "total_content": total_content,
+                    "total_comments": total_comments,
+                })
+
+            return results
+    except Exception as e:
+        logger.error(f"[DeepDashboard] 查询爬取结果失败: {e}")
+        return []
+
+
+def get_topic_contents(topic_id: str) -> Dict:
+    """
+    话题内容明细 — 查某话题下所有平台的具体内容。
+
+    返回 {platform: [{nickname, title, liked, comments, shares, pub_time}, ...]}
+    """
+    try:
+        engine = _get_fish_engine()
+        with engine.connect() as conn:
+            # 获取该话题的所有 task_id
+            task_rows = conn.execute(
+                text("SELECT task_id FROM crawling_tasks WHERE topic_id = :tid"),
+                {"tid": topic_id},
+            ).fetchall()
+            task_ids = [r[0] for r in task_rows]
+            if not task_ids:
+                return {}
+
+            placeholders = ",".join([f":t{i}" for i in range(len(task_ids))])
+            params = {f"t{i}": v for i, v in enumerate(task_ids)}
+
+            result = {}
+            for plat, tbl in PLATFORM_TABLES.items():
+                fm = PLATFORM_FIELD_MAP[plat]
+                # 构建 SELECT 列
+                cols = ["crawling_task_id"]
+                if fm["nickname"]:
+                    cols.append(f"{fm['nickname']} AS nickname")
+                else:
+                    cols.append("'' AS nickname")
+                if fm["title"]:
+                    cols.append(f"{fm['title']} AS title")
+                else:
+                    cols.append("'' AS title")
+                if fm["desc"]:
+                    cols.append(f"`{fm['desc']}` AS `desc`")
+                else:
+                    cols.append("'' AS `desc`")
+                if fm["liked"]:
+                    cols.append(f"{fm['liked']} AS liked")
+                else:
+                    cols.append("'0' AS liked")
+                if fm["comment"]:
+                    cols.append(f"{fm['comment']} AS comments")
+                else:
+                    cols.append("'0' AS comments")
+                if fm["share"]:
+                    cols.append(f"{fm['share']} AS shares")
+                else:
+                    cols.append("'0' AS shares")
+                if fm["time"]:
+                    cols.append(f"{fm['time']} AS pub_time")
+                else:
+                    cols.append("'' AS pub_time")
+
+                select_str = ", ".join(cols)
+                sql = (
+                    f"SELECT {select_str} FROM {tbl['content']} "
+                    f"WHERE crawling_task_id IN ({placeholders}) "
+                    f"ORDER BY id DESC LIMIT 200"
+                )
+                rows = conn.execute(text(sql), params).fetchall()
+                if not rows:
+                    continue
+
+                items = []
+                for row in rows:
+                    # 标题：优先 title，fallback desc 截断
+                    title_val = row[2] or ""
+                    desc_val = row[3] or ""
+                    display_title = title_val if title_val else (desc_val[:80] + "..." if len(desc_val) > 80 else desc_val)
+
+                    items.append({
+                        "nickname": row[1] or "",
+                        "title": display_title,
+                        "liked": str(row[4] or 0),
+                        "comments": str(row[5] or 0),
+                        "shares": str(row[6] or 0),
+                        "pub_time": str(row[7] or ""),
+                    })
+                result[plat] = items
+
+            return result
+    except Exception as e:
+        logger.error(f"[DeepDashboard] 查询话题内容失败: {e}")
+        return {}

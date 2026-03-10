@@ -166,6 +166,32 @@ def get_dashboard_html(token: str = "") -> str:
         .modal-close:hover {{ color: #333; }}
         .modal-chart {{ position: relative; height: 350px; }}
 
+        /* 爬取结果热力格 */
+        .cr-cell {{
+            text-align: center; font-size: 12px; font-weight: 600;
+            min-width: 48px;
+        }}
+        .cr-cell.has-data {{ cursor: default; }}
+        .cr-topic {{ max-width: 260px; cursor: pointer; color: #1890ff; }}
+        .cr-topic:hover {{ text-decoration: underline; }}
+
+        /* 内容弹窗 tab */
+        .tab-bar {{
+            display: flex; gap: 0; border-bottom: 2px solid #f0f0f0; margin-bottom: 12px;
+        }}
+        .tab-btn {{
+            padding: 8px 16px; font-size: 13px; cursor: pointer;
+            border: none; background: none; color: #666; font-weight: 600;
+            border-bottom: 2px solid transparent; margin-bottom: -2px;
+        }}
+        .tab-btn.active {{ color: #1890ff; border-bottom-color: #1890ff; }}
+        .tab-btn:hover {{ color: #1890ff; }}
+        .tab-panel {{ display: none; }}
+        .tab-panel.active {{ display: block; }}
+        .content-table {{ font-size: 12px; }}
+        .content-table td {{ padding: 8px 10px; vertical-align: top; }}
+        .content-table .ct-title {{ max-width: 300px; word-break: break-all; }}
+
         @media (max-width: 768px) {{
             .summary {{ grid-template-columns: repeat(2, 1fr); }}
             .platform-grid {{ grid-template-columns: 1fr; }}
@@ -271,6 +297,31 @@ def get_dashboard_html(token: str = "") -> str:
             <span id="page-info">第 1 页</span>
             <button onclick="nextPage()">下一页</button>
         </div>
+    </div>
+
+    <!-- 爬取结果总览 -->
+    <div class="section">
+        <h2>爬取结果总览</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>话题</th>
+                    <th class="cr-cell">小红书</th>
+                    <th class="cr-cell">抖音</th>
+                    <th class="cr-cell">快手</th>
+                    <th class="cr-cell">B站</th>
+                    <th class="cr-cell">微博</th>
+                    <th class="cr-cell">贴吧</th>
+                    <th class="cr-cell">知乎</th>
+                    <th class="cr-cell">总计</th>
+                    <th class="cr-cell">评论</th>
+                    <th>日期</th>
+                </tr>
+            </thead>
+            <tbody id="crawl-results-body">
+                <tr><td colspan="11" style="text-align:center; color:#aaa;">加载中...</td></tr>
+            </tbody>
+        </table>
     </div>
 
     <!-- 数据产量趋势图 -->
@@ -427,6 +478,15 @@ def get_dashboard_html(token: str = "") -> str:
                 renderErrors(data);
             }} catch (e) {{
                 console.error('加载错误日志失败:', e);
+            }}
+        }}
+
+        async function loadCrawlResults() {{
+            try {{
+                const data = await fetchJSON('/dashboard/api/crawl-results?limit=20');
+                renderCrawlResults(data);
+            }} catch (e) {{
+                console.error('加载爬取结果失败:', e);
             }}
         }}
 
@@ -654,6 +714,124 @@ def get_dashboard_html(token: str = "") -> str:
             container.innerHTML = html;
         }}
 
+        // --- 爬取结果渲染 ---
+        const PLAT_ORDER = ['xhs', 'dy', 'ks', 'bili', 'wb', 'tieba', 'zhihu'];
+
+        function renderCrawlResults(data) {{
+            const tbody = document.getElementById('crawl-results-body');
+            if (!data || !data.length) {{
+                tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; color:#aaa;">暂无爬取结果</td></tr>';
+                return;
+            }}
+            // 找出最大值用于颜色深浅
+            let maxCnt = 1;
+            for (const r of data) {{
+                for (const p of PLAT_ORDER) {{
+                    const c = (r.platforms[p] && r.platforms[p].content) || 0;
+                    if (c > maxCnt) maxCnt = c;
+                }}
+            }}
+
+            let html = '';
+            for (const r of data) {{
+                html += `<tr>`;
+                const safeId = r.topic_id.replace(/'/g, "\\'");
+                const safeName = (r.topic_name || '').replace(/'/g, "\\'");
+                html += `<td class="cr-topic" onclick="showTopicContents('${{safeId}}', '${{safeName}}')">${{escapeHtml(r.topic_name)}}</td>`;
+                for (const p of PLAT_ORDER) {{
+                    const cnt = (r.platforms[p] && r.platforms[p].content) || 0;
+                    const opacity = cnt > 0 ? (0.15 + 0.85 * cnt / maxCnt) : 0;
+                    const bg = cnt > 0 ? `rgba(24,144,255,${{opacity.toFixed(2)}})` : 'transparent';
+                    const color = opacity > 0.5 ? '#fff' : '#333';
+                    html += `<td class="cr-cell" style="background:${{bg}};color:${{cnt > 0 ? color : '#ccc'}};">${{cnt || '-'}}</td>`;
+                }}
+                html += `<td class="cr-cell" style="font-weight:700;">${{r.total_content}}</td>`;
+                html += `<td class="cr-cell" style="color:#888;">${{r.total_comments.toLocaleString()}}</td>`;
+                html += `<td style="font-size:12px;color:#888;">${{r.last_date}}</td>`;
+                html += `</tr>`;
+            }}
+            tbody.innerHTML = html;
+        }}
+
+        // --- 话题内容明细弹窗 ---
+        async function showTopicContents(topicId, topicName) {{
+            try {{
+                const data = await fetchJSON('/dashboard/api/topic-contents/' + encodeURIComponent(topicId));
+                document.getElementById('content-modal-title').textContent = topicName || topicId;
+                const platforms = Object.keys(data);
+                if (!platforms.length) {{
+                    document.getElementById('content-modal-body').innerHTML = '<div style="color:#aaa;text-align:center;padding:40px;">该话题暂无内容数据</div>';
+                    document.getElementById('content-modal-tabs').innerHTML = '';
+                    document.getElementById('content-modal').classList.add('active');
+                    return;
+                }}
+
+                // 构建 tab 按钮
+                let tabHtml = '';
+                let panelHtml = '';
+                let first = true;
+                for (const p of PLAT_ORDER) {{
+                    if (!data[p] || !data[p].length) continue;
+                    const name = PLATFORM_NAMES[p] || p;
+                    const cnt = data[p].length;
+                    tabHtml += `<button class="tab-btn ${{first ? 'active' : ''}}" onclick="switchContentTab('${{p}}')" id="tab-btn-${{p}}">${{name}} (${{cnt}})</button>`;
+
+                    let rows = '';
+                    for (const item of data[p]) {{
+                        rows += `<tr>
+                            <td style="white-space:nowrap;">@${{escapeHtml(item.nickname)}}</td>
+                            <td class="ct-title">${{escapeHtml(item.title)}}</td>
+                            <td style="text-align:right;">${{item.liked}}</td>
+                            <td style="text-align:right;">${{item.comments}}</td>
+                            <td style="text-align:right;">${{item.shares}}</td>
+                            <td style="white-space:nowrap;color:#888;">${{formatPubTime(item.pub_time)}}</td>
+                        </tr>`;
+                    }}
+                    panelHtml += `<div class="tab-panel ${{first ? 'active' : ''}}" id="tab-panel-${{p}}">
+                        <table class="content-table">
+                            <thead><tr>
+                                <th>作者</th><th>内容</th><th>点赞</th><th>评论</th><th>转发</th><th>时间</th>
+                            </tr></thead>
+                            <tbody>${{rows}}</tbody>
+                        </table>
+                    </div>`;
+                    first = false;
+                }}
+
+                document.getElementById('content-modal-tabs').innerHTML = tabHtml;
+                document.getElementById('content-modal-body').innerHTML = panelHtml;
+                document.getElementById('content-modal').classList.add('active');
+            }} catch (e) {{
+                console.error('加载话题内容失败:', e);
+            }}
+        }}
+
+        function switchContentTab(plat) {{
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            const btn = document.getElementById('tab-btn-' + plat);
+            const panel = document.getElementById('tab-panel-' + plat);
+            if (btn) btn.classList.add('active');
+            if (panel) panel.classList.add('active');
+        }}
+
+        function closeContentModal() {{
+            document.getElementById('content-modal').classList.remove('active');
+        }}
+
+        function formatPubTime(val) {{
+            if (!val) return '-';
+            // 尝试解析 unix timestamp
+            const num = Number(val);
+            if (!isNaN(num) && num > 1000000000) {{
+                const d = new Date(num * 1000);
+                const pad = n => String(n).padStart(2, '0');
+                return `${{pad(d.getMonth()+1)}}-${{pad(d.getDate())}} ${{pad(d.getHours())}}:${{pad(d.getMinutes())}}`;
+            }}
+            // 已经是字符串格式
+            return String(val).slice(0, 16);
+        }}
+
         // --- 候选热度曲线弹窗 ---
         let candidateChart = null;
 
@@ -676,7 +854,7 @@ def get_dashboard_html(token: str = "") -> str:
 
         // ESC 关闭
         document.addEventListener('keydown', (e) => {{
-            if (e.key === 'Escape') closeCandidateModal();
+            if (e.key === 'Escape') {{ closeCandidateModal(); closeContentModal(); }}
         }});
 
         function renderCandidateChart(data) {{
@@ -811,7 +989,7 @@ def get_dashboard_html(token: str = "") -> str:
         async function refreshAll() {{
             await Promise.all([
                 loadOverview(), loadPlatforms(), loadCandidates(),
-                loadTasks(), loadVolumes(), loadErrors()
+                loadTasks(), loadCrawlResults(), loadVolumes(), loadErrors()
             ]);
             document.getElementById('last-updated').textContent =
                 '更新于 ' + new Date().toLocaleTimeString();
@@ -842,6 +1020,16 @@ def get_dashboard_html(token: str = "") -> str:
             <div class="modal-chart">
                 <canvas id="candidate-chart"></canvas>
             </div>
+        </div>
+    </div>
+
+    <!-- 话题内容明细弹窗 -->
+    <div class="modal-overlay" id="content-modal" onclick="if(event.target===this)closeContentModal()">
+        <div class="modal-box" style="max-width:960px;">
+            <button class="modal-close" onclick="closeContentModal()">&times;</button>
+            <h3 id="content-modal-title">-</h3>
+            <div class="tab-bar" id="content-modal-tabs"></div>
+            <div id="content-modal-body"></div>
         </div>
     </div>
 </body>

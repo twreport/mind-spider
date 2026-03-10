@@ -147,3 +147,24 @@ async def api_errors(
     _check_token(token)
     data = log_reader.get_error_logs(platform=platform or None, limit=limit)
     return JSONResponse(data)
+
+
+@router.get("/api/crawl-results")
+async def api_crawl_results(
+    token: str = Query(""),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """爬取结果总览 — 按话题聚合各平台内容数"""
+    _check_token(token)
+    data = m.get_crawl_results(limit=limit)
+    content = json.loads(json.dumps(data, ensure_ascii=False, default=str))
+    return JSONResponse(content)
+
+
+@router.get("/api/topic-contents/{topic_id}")
+async def api_topic_contents(topic_id: str, token: str = Query("")):
+    """话题内容明细 — 查某话题下所有平台的具体内容"""
+    _check_token(token)
+    data = m.get_topic_contents(topic_id)
+    content = json.loads(json.dumps(data, ensure_ascii=False, default=str))
+    return JSONResponse(content)
