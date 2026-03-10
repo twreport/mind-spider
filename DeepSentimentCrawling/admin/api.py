@@ -114,12 +114,14 @@ async def api_volumes(
 async def api_top_candidates(
     token: str = Query(""),
     limit: int = Query(10, ge=1, le=50),
+    sort_key: str = Query("max_score"),
+    sort_order: str = Query("desc"),
 ):
     """24h 内热度最高的候选话题"""
     _check_token(token)
     if not _mongo:
         raise HTTPException(status_code=500, detail="服务未初始化")
-    data = m.get_top_candidates(_mongo, limit)
+    data = m.get_top_candidates(_mongo, limit, sort_key=sort_key, sort_order=sort_order)
     content = json.loads(json.dumps(data, ensure_ascii=False, default=str))
     return JSONResponse(content)
 

@@ -446,15 +446,15 @@ def get_dashboard_html(token: str = "") -> str:
         }}
 
         // --- 候选排序状态 ---
-        let _candidatesData = [];
         let _candidatesSortKey = 'max_score';
         let _candidatesSortAsc = false;
 
         async function loadCandidates() {{
             try {{
-                const data = await fetchJSON('/dashboard/api/top-candidates?limit=10');
-                _candidatesData = data || [];
-                sortAndRenderCandidates();
+                const order = _candidatesSortAsc ? 'asc' : 'desc';
+                const data = await fetchJSON(`/dashboard/api/top-candidates?limit=10&sort_key=${{_candidatesSortKey}}&sort_order=${{order}}`);
+                renderCandidates(data || []);
+                updateSortArrows();
             }} catch (e) {{
                 console.error('加载候选话题失败:', e);
             }}
@@ -467,25 +467,10 @@ def get_dashboard_html(token: str = "") -> str:
                 _candidatesSortKey = key;
                 _candidatesSortAsc = false;
             }}
-            sortAndRenderCandidates();
+            loadCandidates();
         }}
 
-        function sortAndRenderCandidates() {{
-            const sorted = [..._candidatesData];
-            const key = _candidatesSortKey;
-            const asc = _candidatesSortAsc;
-            sorted.sort((a, b) => {{
-                const va = a[key], vb = b[key];
-                // null 值始终排最后
-                if (va == null && vb == null) return 0;
-                if (va == null) return 1;
-                if (vb == null) return -1;
-                if (va < vb) return asc ? -1 : 1;
-                if (va > vb) return asc ? 1 : -1;
-                return 0;
-            }});
-            renderCandidates(sorted);
-            // 更新箭头
+        function updateSortArrows() {{
             const sortKeys = ['max_score', 'current_score', 'platform_count', 'triggered_at', 'first_seen_at'];
             for (const k of sortKeys) {{
                 const el = document.getElementById('sort-arrow-' + k);

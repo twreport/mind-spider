@@ -219,12 +219,14 @@ def get_task_list(
     return {"total": total, "tasks": docs}
 
 
-def get_top_candidates(mongo, limit: int = 10) -> List[Dict]:
+def get_top_candidates(
+    mongo, limit: int = 10, sort_key: str = "max_score", sort_order: str = "desc"
+) -> List[Dict]:
     """
-    24 小时内热度最高的候选话题（按最高 score_pos 排序）。
+    24 小时内热度最高的候选话题。
 
     从 candidates 集合查询近 24h 有更新的候选，
-    计算其 snapshots 中的最高 score_pos，取 top N。
+    计算其 snapshots 中的最高 score_pos，按指定字段排序后取 top N。
     """
     mongo.connect()
     col = mongo.get_collection("candidates")
@@ -277,7 +279,20 @@ def get_top_candidates(mongo, limit: int = 10) -> List[Dict]:
             }
         )
 
-    candidates.sort(key=lambda c: c["max_score"], reverse=True)
+    # 允许排序的字段白名单
+    allowed_keys = {"max_score", "current_score", "platform_count", "triggered_at", "first_seen_at"}
+    if sort_key not in allowed_keys:
+        sort_key = "max_score"
+    reverse = sort_order != "asc"
+
+    def _sort_val(c):
+        v = c.get(sort_key)
+        # None 始终排最后
+        if v is None:
+            return (1, 0)
+        return (0, v)
+
+    candidates.sort(key=_sort_val, reverse=reverse)
     return candidates[:limit]
 
 
