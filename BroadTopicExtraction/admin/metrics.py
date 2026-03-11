@@ -111,10 +111,10 @@ def get_collection_volumes(
                 {
                     "$group": {
                         "_id": {
-                            "year": {"$year": "$_dt"},
-                            "month": {"$month": "$_dt"},
-                            "day": {"$dayOfMonth": "$_dt"},
-                            "hour": {"$hour": "$_dt"},
+                            "year": {"$year": {"date": "$_dt", "timezone": "Asia/Shanghai"}},
+                            "month": {"$month": {"date": "$_dt", "timezone": "Asia/Shanghai"}},
+                            "day": {"$dayOfMonth": {"date": "$_dt", "timezone": "Asia/Shanghai"}},
+                            "hour": {"$hour": {"date": "$_dt", "timezone": "Asia/Shanghai"}},
                         },
                         "count": {"$sum": 1},
                     }
