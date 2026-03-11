@@ -39,7 +39,7 @@ def get_error_logs(
     yesterday = today - timedelta(days=1)
 
     errors = []
-    for day in [today, yesterday]:
+    for day in [yesterday, today]:
         log_file = _LOG_DIR / f"scheduler_{day.isoformat()}.log"
         if not log_file.exists():
             continue

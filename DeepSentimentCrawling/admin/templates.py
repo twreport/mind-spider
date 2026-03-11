@@ -215,7 +215,7 @@ def get_dashboard_html(token: str = "") -> str:
     <div class="header">
         <div>
             <h1>MindSpider 深层采集监控</h1>
-            <div class="nav-links" style="margin-top: 6px;">
+            <div style="margin-top: 6px; font-size: 13px;">
                 <a href="/?{token_param}" style="background:#ff4d4f; border-radius:4px; padding:4px 12px; color:#fff; text-decoration:none; font-size:13px; display:inline-block; text-align:center; min-width:80px;">登录控制台</a>
                 <a href="javascript:void(0)" id="shallow-link" style="background:#1890ff; border-radius:4px; padding:4px 12px; color:#fff; text-decoration:none; font-size:13px; margin-left:8px; display:inline-block; text-align:center; min-width:80px;">浅层面板</a>
             </div>
