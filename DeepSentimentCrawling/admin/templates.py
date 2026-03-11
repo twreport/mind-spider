@@ -23,6 +23,10 @@ def get_dashboard_html(token: str = "") -> str:
     token_param = f"token={token}" if token else ""
     amp_token = f"&token={token}" if token else ""
 
+    from ms_config import settings
+    shallow_token = getattr(settings, "ADMIN_DASHBOARD_TOKEN", "")
+    shallow_token_param = f"token={shallow_token}" if shallow_token else ""
+
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -212,8 +216,8 @@ def get_dashboard_html(token: str = "") -> str:
         <div>
             <h1>MindSpider 深层采集监控</h1>
             <div class="nav-links" style="margin-top: 6px;">
-                <a href="/?{token_param}">登录控制台</a>
-                <a href="http://{{window.location.hostname}}:8778/?{token_param}" id="shallow-link">浅层面板</a>
+                <a href="/?{token_param}" style="background:#ff4d4f; border-radius:4px; padding:4px 12px; color:#fff; text-decoration:none; font-size:13px;">登录控制台</a>
+                <a href="javascript:void(0)" id="shallow-link" style="background:#1890ff; border-radius:4px; padding:4px 12px; color:#fff; text-decoration:none; font-size:13px; margin-left:8px;">浅层面板</a>
             </div>
         </div>
         <div class="header-right">
@@ -380,7 +384,7 @@ def get_dashboard_html(token: str = "") -> str:
 
         // 修正浅层面板链接
         document.getElementById('shallow-link').href =
-            'http://' + window.location.hostname + ':8778/?' + TOKEN;
+            'http://' + window.location.hostname + ':8778/?' + '{shallow_token_param}';
 
         // --- Token 鉴权处理 ---
         function promptToken() {{

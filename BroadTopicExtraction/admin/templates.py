@@ -96,7 +96,8 @@ def get_dashboard_html(token: str = "") -> str:
         <div>
             <h1>MindSpider 浅层采集监控</h1>
             <div style="margin-top: 6px; font-size: 13px;">
-                <a href="javascript:void(0)" id="deep-dashboard-link" style="color:#1890ff; text-decoration:none;">深层面板 →</a>
+                <a href="javascript:void(0)" id="login-console-link" style="background:#ff4d4f; border-radius:4px; padding:4px 12px; color:#fff; text-decoration:none; font-size:13px;">登录控制台</a>
+                <a href="javascript:void(0)" id="deep-dashboard-link" style="background:#003a8c; border-radius:4px; padding:4px 12px; color:#fff; text-decoration:none; font-size:13px; margin-left:8px;">深层面板</a>
             </div>
         </div>
         <div class="header-right">
@@ -106,7 +107,9 @@ def get_dashboard_html(token: str = "") -> str:
     </div>
 
     <script>
-        // 设置深层面板链接
+        // 设置导航链接
+        document.getElementById('login-console-link').href =
+            'http://' + window.location.hostname + ':8777/?' + '{deep_token_param}';
         document.getElementById('deep-dashboard-link').href =
             'http://' + window.location.hostname + ':8777/dashboard/?' + '{deep_token_param}';
     </script>
