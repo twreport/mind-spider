@@ -183,8 +183,8 @@ async def dashboard(token: str = Query("")):
         <h1>MindSpider 登录控制台</h1>
         <p>管理各平台 cookie 状态，点击"扫码登录"更新过期 cookie。</p>
         <p style="margin-top:10px;">
-            <a href="javascript:void(0)" id="shallow-link" style="background:#1890ff; border-radius:4px; padding:4px 12px; color:#fff; text-decoration:none; font-size:13px;">浅层面板</a>
-            <a href="/dashboard?token={token}" style="background:#003a8c; border-radius:4px; padding:4px 12px; color:#fff; text-decoration:none; font-size:13px; margin-left:8px;">深层面板</a>
+            <a href="javascript:void(0)" id="shallow-link" style="background:#1890ff; border-radius:4px; padding:4px 12px; color:#fff; text-decoration:none; font-size:13px; display:inline-block; text-align:center; min-width:80px;">浅层面板</a>
+            <a href="/dashboard?token={token}" style="background:#003a8c; border-radius:4px; padding:4px 12px; color:#fff; text-decoration:none; font-size:13px; margin-left:8px; display:inline-block; text-align:center; min-width:80px;">深层面板</a>
         </p>
         <script>
             document.getElementById('shallow-link').href =
