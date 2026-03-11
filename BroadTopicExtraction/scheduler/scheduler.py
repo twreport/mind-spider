@@ -134,6 +134,7 @@ class MindSpiderScheduler:
                 id=source_name,
                 name=config.get("display_name", source_name),
                 replace_existing=True,
+                misfire_grace_time=3600,  # cron 任务允许 1 小时内补执行
             )
             job_count += 1
             logger.info(
@@ -253,7 +254,9 @@ class MindSpiderScheduler:
             success = result.get("success", False) if isinstance(result, dict) else True
             collection = config.get("mongo_collection", "")
             if success and collection:
-                self._run_signal_detection(source_name, collection)
+                # Scrapy 源写入 MongoDB 的 source 字段是 spider_name，不是 YAML key
+                mongo_source = config.get("spider_name", source_name) if source_type == "scrapy" else source_name
+                self._run_signal_detection(mongo_source, collection)
 
         except Exception as e:
             elapsed = (datetime.now() - start_time).total_seconds()
