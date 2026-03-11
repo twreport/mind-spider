@@ -133,6 +133,7 @@ python BroadTopicExtraction/admin/app.py --host 127.0.0.1 --port 8778
 | 服务名 | 说明 | 日志路径 |
 |--------|------|----------|
 | `mindspider-broad-crawl` | 表层采集调度器（53+ 数据源） | `logs/broad_crawl.log` |
+| `mindspider-dashboard` | 监控面板（浅层 8778 + 深层 8777） | `logs/dashboard.log` |
 | `mindspider-deep-crawl` | 深层采集服务（7 平台 Playwright，端口 8777） | `logs/deep_crawl.log` |
 
 ### 常用命令
@@ -140,6 +141,7 @@ python BroadTopicExtraction/admin/app.py --host 127.0.0.1 --port 8778
 ```bash
 # 查看服务状态
 systemctl status mindspider-broad-crawl
+systemctl status mindspider-dashboard
 systemctl status mindspider-deep-crawl
 
 # 启动 / 停止 / 重启
@@ -147,20 +149,27 @@ systemctl start mindspider-broad-crawl
 systemctl stop mindspider-broad-crawl
 systemctl restart mindspider-broad-crawl
 
+systemctl start mindspider-dashboard
+systemctl stop mindspider-dashboard
+systemctl restart mindspider-dashboard
+
 systemctl start mindspider-deep-crawl
 systemctl stop mindspider-deep-crawl
 systemctl restart mindspider-deep-crawl
 
 # 查看实时日志
 journalctl -u mindspider-broad-crawl -f
+journalctl -u mindspider-dashboard -f
 journalctl -u mindspider-deep-crawl -f
 
 # 或直接 tail 日志文件
 tail -f /deploy/parallel-universe/mind-spider/logs/broad_crawl.log
+tail -f /deploy/parallel-universe/mind-spider/logs/dashboard.log
 tail -f /deploy/parallel-universe/mind-spider/logs/deep_crawl.log
 
 # 查看服务配置
 systemctl cat mindspider-broad-crawl
+systemctl cat mindspider-dashboard
 systemctl cat mindspider-deep-crawl
 ```
 
@@ -174,12 +183,14 @@ git push
 cd /deploy/parallel-universe/mind-spider
 git pull
 systemctl restart mindspider-broad-crawl
+systemctl restart mindspider-dashboard
 systemctl restart mindspider-deep-crawl
 ```
 
 ### service 文件位置
 
 - `/etc/systemd/system/mindspider-broad-crawl.service`
+- `/etc/systemd/system/mindspider-dashboard.service`
 - `/etc/systemd/system/mindspider-deep-crawl.service`
 
 修改 service 文件后需执行 `systemctl daemon-reload`。
