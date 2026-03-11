@@ -98,21 +98,23 @@ def get_collection_volumes(
     返回 {collection_name: [{hour: "2024-01-01T12:00", count: 42}, ...]}
     """
     collections = ["aggregator", "hot_national", "hot_vertical", "media"]
-    since = datetime.now() - timedelta(hours=hours)
+    since_ts = int((datetime.now() - timedelta(hours=hours)).timestamp())
     result = {}
 
     for coll_name in collections:
         try:
             col = mongo.get_collection(coll_name)
             pipeline = [
-                {"$match": {"first_seen_at": {"$gte": since}}},
+                {"$match": {"first_seen_at": {"$gte": since_ts}}},
+                # first_seen_at 是 Unix 秒级时间戳(int)，需转为 Date 才能用日期操作符
+                {"$addFields": {"_dt": {"$toDate": {"$multiply": ["$first_seen_at", 1000]}}}},
                 {
                     "$group": {
                         "_id": {
-                            "year": {"$year": "$first_seen_at"},
-                            "month": {"$month": "$first_seen_at"},
-                            "day": {"$dayOfMonth": "$first_seen_at"},
-                            "hour": {"$hour": "$first_seen_at"},
+                            "year": {"$year": "$_dt"},
+                            "month": {"$month": "$_dt"},
+                            "day": {"$dayOfMonth": "$_dt"},
+                            "hour": {"$hour": "$_dt"},
                         },
                         "count": {"$sum": 1},
                     }
