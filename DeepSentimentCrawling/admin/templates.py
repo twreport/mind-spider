@@ -52,7 +52,7 @@ def get_dashboard_html(token: str = "") -> str:
         .header h1 {{ font-size: 22px; color: #1a1a2e; }}
         .header-right {{ display: flex; align-items: center; gap: 12px; font-size: 13px; color: #888; }}
         .header-right label {{ cursor: pointer; }}
-        .nav-links {{ font-size: 13px; display: flex; gap: 16px; }}
+        .nav-links {{ font-size: 13px; display: flex; gap: 0; }}
 
         /* 摘要卡片 */
         .summary {{
