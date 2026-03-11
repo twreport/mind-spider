@@ -11,6 +11,10 @@ def get_dashboard_html(token: str = "") -> str:
     token_param = f"token={token}" if token else ""
     amp_token = f"&token={token}" if token else ""
 
+    from ms_config import settings
+    deep_token = getattr(settings, "LOGIN_CONSOLE_TOKEN", "")
+    deep_token_param = f"token={deep_token}" if deep_token else ""
+
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -104,7 +108,7 @@ def get_dashboard_html(token: str = "") -> str:
     <script>
         // 设置深层面板链接
         document.getElementById('deep-dashboard-link').href =
-            'http://' + window.location.hostname + ':8777/dashboard/?' + '{token_param}';
+            'http://' + window.location.hostname + ':8777/dashboard/?' + '{deep_token_param}';
     </script>
 
     <!-- 摘要卡片 -->
