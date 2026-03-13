@@ -214,6 +214,79 @@ class TieBaExtractor:
         note.title = note.title.replace(f"【{note.tieba_name}】_百度贴吧", "")
         return note
 
+    def extract_comments_from_api_json(self, api_json: dict, note_id: str) -> List[TiebaComment]:
+        """
+        从 /c/f/pb/page_pc API 返回的 JSON 中提取评论
+        """
+        from datetime import datetime
+        result: List[TiebaComment] = []
+        post_list = api_json.get("post_list", [])
+        forum = api_json.get("forum", {})
+        forum_name = forum.get("name", "")
+        forum_id = str(forum.get("id", ""))
+
+        for post in post_list:
+            try:
+                # 跳过楼主（floor=0 的第一条是楼主帖子本身）
+                # post_list 里 floor 都是 0，用 index 判断：第一条是楼主
+                pid = str(post.get("id", ""))
+                if not pid:
+                    continue
+
+                # 提取内容
+                content_parts = post.get("content", [])
+                text = " ".join([c.get("text", "") for c in content_parts if c.get("type") == 0])
+                if not text.strip():
+                    continue
+
+                # 作者信息
+                author = post.get("author", {})
+                author_name = author.get("show_name", "") or author.get("name_show", "") or author.get("name", "")
+                author_portrait = author.get("portrait", "")
+                user_avatar = f"https://gss0.bdstatic.com/6LZ1dD3d1sgCo2Kml5_Y_D3/sys/portrait/item/{author_portrait}" if author_portrait else ""
+
+                # 时间
+                timestamp = post.get("time", 0)
+                publish_time = ""
+                if timestamp:
+                    try:
+                        publish_time = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+                    except (ValueError, OSError):
+                        pass
+
+                # IP 地理位置
+                lbs = post.get("lbs_info", {})
+                ip_location = lbs.get("ip", "") if isinstance(lbs, dict) else ""
+
+                # 子评论数
+                sub_count = post.get("sub_post_number", 0)
+
+                comment = TiebaComment(
+                    comment_id=pid,
+                    sub_comment_count=int(sub_count) if sub_count else 0,
+                    content=text,
+                    note_url=const.TIEBA_URL + f"/p/{note_id}",
+                    user_link="",
+                    user_nickname=author_name,
+                    user_avatar=user_avatar,
+                    tieba_id=forum_id,
+                    tieba_name=forum_name,
+                    tieba_link=const.TIEBA_URL + f"/f?kw={forum_name}" if forum_name else "",
+                    ip_location=ip_location,
+                    publish_time=publish_time,
+                    note_id=note_id,
+                )
+                result.append(comment)
+            except Exception as e:
+                utils.logger.error(f"Failed to extract comment from API JSON: {e}")
+                continue
+
+        # 跳过第一条（楼主帖子本身）
+        if result:
+            result = result[1:]
+
+        return result
+
     def extract_tieba_note_parment_comments(self, page_content: str, note_id: str) -> List[TiebaComment]:
         """
         提取贴吧帖子一级评论

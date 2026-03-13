@@ -48,6 +48,7 @@ class BaiduTieBaClient(AbstractApiClient):
         self._page_extractor = TieBaExtractor()
         self.default_ip_proxy = default_ip_proxy
         self.playwright_page = playwright_page  # Playwright页面对象
+        self._cached_comments: Dict[str, dict] = {}  # note_id -> page_pc API JSON
 
     def _sync_request(self, method, url, proxy=None, **kwargs):
         """
@@ -311,27 +312,31 @@ class BaiduTieBaClient(AbstractApiClient):
         """检测是否为空壳HTML（需要JS渲染的页面）"""
         return "p_postlist" not in page_content and "lzonly_cntn" not in page_content
 
+    def _parse_cookies_for_playwright(self) -> list:
+        """将 cookie 字符串解析为 Playwright 格式"""
+        cookie_str = config.COOKIES if hasattr(config, 'COOKIES') and config.COOKIES else self.headers.get("Cookie", "")
+        cookies = []
+        if cookie_str:
+            for item in cookie_str.split(";"):
+                item = item.strip()
+                if "=" in item:
+                    name, value = item.split("=", 1)
+                    cookies.append({"name": name.strip(), "value": value.strip(), "domain": ".baidu.com", "path": "/"})
+        return cookies
+
     async def _playwright_get(self, url: str) -> str:
         """使用 Playwright headless 获取需要 JS 渲染的页面"""
         from playwright.async_api import async_playwright
 
-        cookie_str = config.COOKIES if hasattr(config, 'COOKIES') and config.COOKIES else self.headers.get("Cookie", "")
         ua = self.headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             context = await browser.new_context(user_agent=ua)
 
-            # 注入 cookies
-            if cookie_str:
-                cookies = []
-                for item in cookie_str.split(";"):
-                    item = item.strip()
-                    if "=" in item:
-                        name, value = item.split("=", 1)
-                        cookies.append({"name": name.strip(), "value": value.strip(), "domain": ".baidu.com", "path": "/"})
-                if cookies:
-                    await context.add_cookies(cookies)
+            cookies = self._parse_cookies_for_playwright()
+            if cookies:
+                await context.add_cookies(cookies)
 
             page = await context.new_page()
             try:
@@ -341,10 +346,52 @@ class BaiduTieBaClient(AbstractApiClient):
             finally:
                 await browser.close()
 
+    async def _playwright_get_with_comments(self, note_id: str) -> tuple:
+        """
+        使用 Playwright 获取帖子详情页，同时拦截 /c/f/pb/page_pc API 获取评论 JSON。
+        Returns: (html_content, comments_json_or_None)
+        """
+        from playwright.async_api import async_playwright
+
+        ua = self.headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        url = f"{self._host}/p/{note_id}"
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(user_agent=ua)
+
+            cookies = self._parse_cookies_for_playwright()
+            if cookies:
+                await context.add_cookies(cookies)
+
+            page = await context.new_page()
+            comments_json = None
+
+            async def on_response(response):
+                nonlocal comments_json
+                if "c/f/pb/page_pc" in response.url:
+                    try:
+                        body = await response.body()
+                        comments_json = json.loads(body)
+                    except Exception:
+                        pass
+
+            page.on("response", on_response)
+
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                # 等待 API 请求完成
+                await asyncio.sleep(5)
+                content = await page.content()
+                return content, comments_json
+            finally:
+                await browser.close()
+
     async def get_note_by_id(self, note_id: str) -> TiebaNote:
         """
         根据帖子ID获取帖子详情
-        优先使用curl，如果返回空壳HTML则回退到Playwright headless渲染
+        优先使用curl，如果返回空壳HTML则回退到Playwright headless渲染，
+        同时拦截 /c/f/pb/page_pc API 缓存评论数据。
         """
         note_url = f"{self._host}/p/{note_id}"
         utils.logger.info(f"[BaiduTieBaClient.get_note_by_id] curl 访问帖子详情: {note_url}")
@@ -360,12 +407,17 @@ class BaiduTieBaClient(AbstractApiClient):
             # 检测是否为空壳HTML（客户端渲染页面），如果是则回退到 Playwright
             if self._is_empty_shell_html(page_content):
                 utils.logger.warning(f"[BaiduTieBaClient.get_note_by_id] curl 返回空壳HTML，回退到 Playwright: {note_id}")
-                page_content = await self._playwright_get(note_url)
+                page_content, comments_json = await self._playwright_get_with_comments(note_id)
                 utils.logger.info(f"[BaiduTieBaClient.get_note_by_id] Playwright 获取完成,长度: {len(page_content)}")
 
                 if "百度安全验证" in page_content[:500]:
                     utils.logger.warning(f"[BaiduTieBaClient.get_note_by_id] Playwright 也触发百度安全验证: {note_id}")
                     raise Exception("百度安全验证")
+
+                # 缓存评论 JSON 供 get_note_all_comments 使用
+                if comments_json:
+                    self._cached_comments[note_id] = comments_json
+                    utils.logger.info(f"[BaiduTieBaClient.get_note_by_id] 缓存了 {len(comments_json.get('post_list', []))} 条评论")
 
             note_detail = self._page_extractor.extract_note_detail(page_content, note_id=note_id)
             return note_detail
@@ -382,11 +434,28 @@ class BaiduTieBaClient(AbstractApiClient):
         max_count: int = 10,
     ) -> List[TiebaComment]:
         """
-        获取指定帖子下的所有一级评论 (使用curl绕过TLS指纹拦截)
+        获取指定帖子下的所有一级评论。
+        优先使用缓存的 page_pc API JSON（Playwright 拦截），回退到 curl HTML 解析。
         """
+        note_id = note_detail.note_id
         result: List[TiebaComment] = []
-        current_page = 1
 
+        # 优先从缓存的 API JSON 提取评论
+        cached = self._cached_comments.pop(note_id, None)
+        if cached:
+            comments = self._page_extractor.extract_comments_from_api_json(cached, note_id)
+            utils.logger.info(f"[BaiduTieBaClient.get_note_all_comments] 从缓存 API JSON 提取到 {len(comments)} 条评论")
+            if comments:
+                if len(comments) > max_count:
+                    comments = comments[:max_count]
+                if callback:
+                    await callback(note_id, comments)
+                result.extend(comments)
+                utils.logger.info(f"[BaiduTieBaClient.get_note_all_comments] 共获取 {len(result)} 条一级评论")
+                return result
+
+        # 回退到 curl HTML 解析（旧版页面）
+        current_page = 1
         while note_detail.total_replay_page >= current_page and len(result) < max_count:
             comment_url = f"{self._host}/p/{note_detail.note_id}?pn={current_page}"
             utils.logger.info(f"[BaiduTieBaClient.get_note_all_comments] curl 评论页: {comment_url}")
