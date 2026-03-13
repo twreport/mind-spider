@@ -307,9 +307,44 @@ class BaiduTieBaClient(AbstractApiClient):
         utils.logger.debug(f"[BaiduTieBaClient._curl_get] encoding={encoding}, len={len(text)}")
         return text
 
+    def _is_empty_shell_html(self, page_content: str) -> bool:
+        """检测是否为空壳HTML（需要JS渲染的页面）"""
+        return "p_postlist" not in page_content and "lzonly_cntn" not in page_content
+
+    async def _playwright_get(self, url: str) -> str:
+        """使用 Playwright headless 获取需要 JS 渲染的页面"""
+        from playwright.async_api import async_playwright
+
+        cookie_str = config.COOKIES if hasattr(config, 'COOKIES') and config.COOKIES else self.headers.get("Cookie", "")
+        ua = self.headers.get("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(user_agent=ua)
+
+            # 注入 cookies
+            if cookie_str:
+                cookies = []
+                for item in cookie_str.split(";"):
+                    item = item.strip()
+                    if "=" in item:
+                        name, value = item.split("=", 1)
+                        cookies.append({"name": name.strip(), "value": value.strip(), "domain": ".baidu.com", "path": "/"})
+                if cookies:
+                    await context.add_cookies(cookies)
+
+            page = await context.new_page()
+            try:
+                await page.goto(url, wait_until="networkidle", timeout=30000)
+                content = await page.content()
+                return content
+            finally:
+                await browser.close()
+
     async def get_note_by_id(self, note_id: str) -> TiebaNote:
         """
-        根据帖子ID获取帖子详情 (使用curl绕过TLS指纹拦截)
+        根据帖子ID获取帖子详情
+        优先使用curl，如果返回空壳HTML则回退到Playwright headless渲染
         """
         note_url = f"{self._host}/p/{note_id}"
         utils.logger.info(f"[BaiduTieBaClient.get_note_by_id] curl 访问帖子详情: {note_url}")
@@ -321,6 +356,16 @@ class BaiduTieBaClient(AbstractApiClient):
             if "百度安全验证" in page_content[:500]:
                 utils.logger.warning(f"[BaiduTieBaClient.get_note_by_id] 帖子 {note_id} 触发百度安全验证")
                 raise Exception("百度安全验证")
+
+            # 检测是否为空壳HTML（客户端渲染页面），如果是则回退到 Playwright
+            if self._is_empty_shell_html(page_content):
+                utils.logger.warning(f"[BaiduTieBaClient.get_note_by_id] curl 返回空壳HTML，回退到 Playwright: {note_id}")
+                page_content = await self._playwright_get(note_url)
+                utils.logger.info(f"[BaiduTieBaClient.get_note_by_id] Playwright 获取完成,长度: {len(page_content)}")
+
+                if "百度安全验证" in page_content[:500]:
+                    utils.logger.warning(f"[BaiduTieBaClient.get_note_by_id] Playwright 也触发百度安全验证: {note_id}")
+                    raise Exception("百度安全验证")
 
             note_detail = self._page_extractor.extract_note_detail(page_content)
             return note_detail
