@@ -149,7 +149,7 @@ postgresql_db_config = {{
         """
         try:
             # 判断数据库类型，确定 SAVE_DATA_OPTION
-            db_dialect = (config.settings.DB_DIALECT or "mysql").lower()
+            db_dialect = (settings.DB_DIALECT or "mysql").lower()
             is_postgresql = db_dialect in ("postgresql", "postgres")
             save_data_option = "postgresql" if is_postgresql else "db"
             
@@ -233,7 +233,7 @@ postgresql_db_config = {{
                 return {"success": False, "error": "基础配置创建失败"}
             
             # 判断数据库类型，确定 save_data_option
-            db_dialect = (config.settings.DB_DIALECT or "mysql").lower()
+            db_dialect = (settings.DB_DIALECT or "mysql").lower()
             is_postgresql = db_dialect in ("postgresql", "postgres")
             save_data_option = "postgresql" if is_postgresql else "db"
             
