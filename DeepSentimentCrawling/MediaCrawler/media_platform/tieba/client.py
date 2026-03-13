@@ -367,7 +367,7 @@ class BaiduTieBaClient(AbstractApiClient):
                     utils.logger.warning(f"[BaiduTieBaClient.get_note_by_id] Playwright 也触发百度安全验证: {note_id}")
                     raise Exception("百度安全验证")
 
-            note_detail = self._page_extractor.extract_note_detail(page_content)
+            note_detail = self._page_extractor.extract_note_detail(page_content, note_id=note_id)
             return note_detail
 
         except Exception as e:
