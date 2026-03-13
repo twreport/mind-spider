@@ -312,14 +312,14 @@ class TieBaCrawler(AbstractCrawler):
                     )
                     return None
                 return note_detail
+            except KeyError as ex:
+                utils.logger.error(
+                    f"[BaiduTieBaCrawler.get_note_detail] have not found note detail note_id:{note_id}, err: {ex}"
+                )
+                return None
             except Exception as ex:
                 utils.logger.error(
                     f"[BaiduTieBaCrawler.get_note_detail] Get note detail error: {ex}"
-                )
-                return None
-            except KeyError as ex:
-                utils.logger.error(
-                    f"[BaiduTieBaCrawler.get_note_detail] have not fund note detail note_id:{note_id}, err: {ex}"
                 )
                 return None
 

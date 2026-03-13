@@ -91,7 +91,7 @@ class TieBaExtractor:
                                    tieba_name=content_selector.xpath("//a[@class='card_title_fname']/text()").get(
                                        default='').strip(), tieba_link=const.TIEBA_URL + content_selector.xpath(
                     "//a[@class='card_title_fname']/@href").get(default=''),
-                                   total_replay_num=post_field_value.get("reply_num", 0))
+                                   total_replay_num=int(post_field_value.get("reply_num", 0)))
             result.append(tieba_note)
         return result
 
@@ -104,33 +104,48 @@ class TieBaExtractor:
         Returns:
 
         """
-        content_selector = Selector(text=page_content)
-        first_floor_selector = content_selector.xpath("//div[@class='p_postlist'][1]")
-        only_view_author_link = content_selector.xpath("//*[@id='lzonly_cntn']/@href").get(default='').strip()
-        note_id = only_view_author_link.split("?")[0].split("/")[-1]
-        # 帖子回复数、回复页数
-        thread_num_infos = content_selector.xpath(
-            "//div[@id='thread_theme_5']//li[@class='l_reply_num']//span[@class='red']")
-        # IP地理位置、发表时间
-        other_info_content = content_selector.xpath(".//div[@class='post-tail-wrap']").get(default="").strip()
-        ip_location, publish_time = self.extract_ip_and_pub_time(other_info_content)
-        note = TiebaNote(note_id=note_id, title=content_selector.xpath("//title/text()").get(default='').strip(),
-                         desc=content_selector.xpath("//meta[@name='description']/@content").get(default='').strip(),
-                         note_url=const.TIEBA_URL + f"/p/{note_id}",
-                         user_link=const.TIEBA_URL + first_floor_selector.xpath(
-                             ".//a[@class='p_author_face ']/@href").get(default='').strip(),
-                         user_nickname=first_floor_selector.xpath(
-                             ".//a[@class='p_author_name j_user_card']/text()").get(default='').strip(),
-                         user_avatar=first_floor_selector.xpath(".//a[@class='p_author_face ']/img/@src").get(
-                             default='').strip(),
-                         tieba_name=content_selector.xpath("//a[@class='card_title_fname']/text()").get(
-                             default='').strip(), tieba_link=const.TIEBA_URL + content_selector.xpath(
-                "//a[@class='card_title_fname']/@href").get(default=''), ip_location=ip_location,
-                         publish_time=publish_time,
-                         total_replay_num=thread_num_infos[0].xpath("./text()").get(default='').strip(),
-                         total_replay_page=thread_num_infos[1].xpath("./text()").get(default='').strip(), )
-        note.title = note.title.replace(f"【{note.tieba_name}】_百度贴吧", "")
-        return note
+        try:
+            content_selector = Selector(text=page_content)
+            first_floor_selector = content_selector.xpath("//div[@class='p_postlist'][1]")
+            only_view_author_link = content_selector.xpath("//*[@id='lzonly_cntn']/@href").get(default='').strip()
+            note_id = only_view_author_link.split("?")[0].split("/")[-1]
+            # 帖子回复数、回复页数
+            thread_num_infos = content_selector.xpath(
+                "//div[@id='thread_theme_5']//li[@class='l_reply_num']//span[@class='red']")
+
+            # 安全提取回复数和页数，带边界检查和类型转换
+            total_replay_num = 0
+            total_replay_page = 0
+            if len(thread_num_infos) >= 2:
+                try:
+                    total_replay_num = int(thread_num_infos[0].xpath("./text()").get(default='0').strip() or '0')
+                    total_replay_page = int(thread_num_infos[1].xpath("./text()").get(default='0').strip() or '0')
+                except (ValueError, AttributeError) as e:
+                    utils.logger.warning(f"Failed to parse thread_num_infos: {e}")
+
+            # IP地理位置、发表时间
+            other_info_content = content_selector.xpath(".//div[@class='post-tail-wrap']").get(default="").strip()
+            ip_location, publish_time = self.extract_ip_and_pub_time(other_info_content)
+            note = TiebaNote(note_id=note_id, title=content_selector.xpath("//title/text()").get(default='').strip(),
+                             desc=content_selector.xpath("//meta[@name='description']/@content").get(default='').strip(),
+                             note_url=const.TIEBA_URL + f"/p/{note_id}",
+                             user_link=const.TIEBA_URL + first_floor_selector.xpath(
+                                 ".//a[@class='p_author_face ']/@href").get(default='').strip(),
+                             user_nickname=first_floor_selector.xpath(
+                                 ".//a[@class='p_author_name j_user_card']/text()").get(default='').strip(),
+                             user_avatar=first_floor_selector.xpath(".//a[@class='p_author_face ']/img/@src").get(
+                                 default='').strip(),
+                             tieba_name=content_selector.xpath("//a[@class='card_title_fname']/text()").get(
+                                 default='').strip(), tieba_link=const.TIEBA_URL + content_selector.xpath(
+                    "//a[@class='card_title_fname']/@href").get(default=''), ip_location=ip_location,
+                             publish_time=publish_time,
+                             total_replay_num=total_replay_num,
+                             total_replay_page=total_replay_page, )
+            note.title = note.title.replace(f"【{note.tieba_name}】_百度贴吧", "")
+            return note
+        except Exception as e:
+            utils.logger.error(f"Failed to extract note detail: {e}")
+            raise
 
     def extract_tieba_note_parment_comments(self, page_content: str, note_id: str) -> List[TiebaComment]:
         """
@@ -149,24 +164,40 @@ class TieBaExtractor:
             comment_field_value: Dict = self.extract_data_field_value(comment_selector)
             if not comment_field_value:
                 continue
-            tieba_name = comment_selector.xpath("//a[@class='card_title_fname']/text()").get(default='').strip()
-            other_info_content = comment_selector.xpath(".//div[@class='post-tail-wrap']").get(default="").strip()
-            ip_location, publish_time = self.extract_ip_and_pub_time(other_info_content)
-            tieba_comment = TiebaComment(comment_id=str(comment_field_value.get("content").get("post_id")),
-                                         sub_comment_count=comment_field_value.get("content").get("comment_num"),
-                                         content=utils.extract_text_from_html(
-                                             comment_field_value.get("content").get("content")),
-                                         note_url=const.TIEBA_URL + f"/p/{note_id}",
-                                         user_link=const.TIEBA_URL + comment_selector.xpath(
-                                             ".//a[@class='p_author_face ']/@href").get(default='').strip(),
-                                         user_nickname=comment_selector.xpath(
-                                             ".//a[@class='p_author_name j_user_card']/text()").get(default='').strip(),
-                                         user_avatar=comment_selector.xpath(
-                                             ".//a[@class='p_author_face ']/img/@src").get(default='').strip(),
-                                         tieba_id=str(comment_field_value.get("content").get("forum_id", "")),
-                                         tieba_name=tieba_name, tieba_link=f"https://tieba.baidu.com/f?kw={tieba_name}",
-                                         ip_location=ip_location, publish_time=publish_time, note_id=note_id, )
-            result.append(tieba_comment)
+
+            # 安全提取 content 字段，避免 AttributeError
+            content_data = comment_field_value.get("content")
+            if not content_data or not isinstance(content_data, dict):
+                utils.logger.warning(f"Invalid comment_field_value structure, skipping comment")
+                continue
+
+            try:
+                tieba_name = comment_selector.xpath("//a[@class='card_title_fname']/text()").get(default='').strip()
+                other_info_content = comment_selector.xpath(".//div[@class='post-tail-wrap']").get(default="").strip()
+                ip_location, publish_time = self.extract_ip_and_pub_time(other_info_content)
+
+                tieba_comment = TiebaComment(
+                    comment_id=str(content_data.get("post_id", "")),
+                    sub_comment_count=int(content_data.get("comment_num", 0)),
+                    content=utils.extract_text_from_html(content_data.get("content", "")),
+                    note_url=const.TIEBA_URL + f"/p/{note_id}",
+                    user_link=const.TIEBA_URL + comment_selector.xpath(
+                        ".//a[@class='p_author_face ']/@href").get(default='').strip(),
+                    user_nickname=comment_selector.xpath(
+                        ".//a[@class='p_author_name j_user_card']/text()").get(default='').strip(),
+                    user_avatar=comment_selector.xpath(
+                        ".//a[@class='p_author_face ']/img/@src").get(default='').strip(),
+                    tieba_id=str(content_data.get("forum_id", "")),
+                    tieba_name=tieba_name,
+                    tieba_link=f"https://tieba.baidu.com/f?kw={tieba_name}",
+                    ip_location=ip_location,
+                    publish_time=publish_time,
+                    note_id=note_id,
+                )
+                result.append(tieba_comment)
+            except (ValueError, TypeError, KeyError) as e:
+                utils.logger.error(f"Failed to extract tieba comment: {e}, comment_field_value: {comment_field_value}")
+                continue
         return result
 
     def extract_tieba_note_sub_comments(self, page_content: str, parent_comment: TiebaComment) -> List[TiebaComment]:
@@ -184,23 +215,38 @@ class TieBaExtractor:
         comment_ele_list = selector.xpath("//li[@class='lzl_single_post j_lzl_s_p first_no_border']")
         comment_ele_list.extend(selector.xpath("//li[@class='lzl_single_post j_lzl_s_p ']"))
         for comment_ele in comment_ele_list:
-            comment_value = self.extract_data_field_value(comment_ele)
-            if not comment_value:
+            try:
+                comment_value = self.extract_data_field_value(comment_ele)
+                if not comment_value:
+                    continue
+
+                # 安全提取用户链接元素，带边界检查
+                comment_user_a_selectors = comment_ele.xpath("./a[@class='j_user_card lzl_p_p']")
+                if not comment_user_a_selectors:
+                    utils.logger.warning("No user link found in sub comment, skipping")
+                    continue
+                comment_user_a_selector = comment_user_a_selectors[0]
+
+                content = utils.extract_text_from_html(
+                    comment_ele.xpath(".//span[@class='lzl_content_main']").get(default=""))
+                comment = TiebaComment(
+                    comment_id=str(comment_value.get("spid", "")),
+                    content=content,
+                    user_link=comment_user_a_selector.xpath("./@href").get(default=""),
+                    user_nickname=comment_value.get("showname", ""),
+                    user_avatar=comment_user_a_selector.xpath("./img/@src").get(default=""),
+                    publish_time=comment_ele.xpath(".//span[@class='lzl_time']/text()").get(default="").strip(),
+                    parent_comment_id=parent_comment.comment_id,
+                    note_id=parent_comment.note_id,
+                    note_url=parent_comment.note_url,
+                    tieba_id=parent_comment.tieba_id,
+                    tieba_name=parent_comment.tieba_name,
+                    tieba_link=parent_comment.tieba_link
+                )
+                comments.append(comment)
+            except (IndexError, ValueError, TypeError, KeyError) as e:
+                utils.logger.error(f"Failed to extract tieba sub comment: {e}")
                 continue
-            comment_user_a_selector = comment_ele.xpath("./a[@class='j_user_card lzl_p_p']")[0]
-            content = utils.extract_text_from_html(
-                comment_ele.xpath(".//span[@class='lzl_content_main']").get(default=""))
-            comment = TiebaComment(
-                comment_id=str(comment_value.get("spid")), content=content,
-                user_link=comment_user_a_selector.xpath("./@href").get(default=""),
-                user_nickname=comment_value.get("showname"),
-                user_avatar=comment_user_a_selector.xpath("./img/@src").get(default=""),
-                publish_time=comment_ele.xpath(".//span[@class='lzl_time']/text()").get(default="").strip(),
-                parent_comment_id=parent_comment.comment_id,
-                note_id=parent_comment.note_id, note_url=parent_comment.note_url,
-                tieba_id=parent_comment.tieba_id, tieba_name=parent_comment.tieba_name,
-                tieba_link=parent_comment.tieba_link)
-            comments.append(comment)
 
         return comments
 
@@ -351,7 +397,7 @@ class TieBaExtractor:
             unescaped_json_str = html.unescape(data_field_value)
             data_field_dict_value = json.loads(unescaped_json_str)
         except Exception as ex:
-            print(f"extract_data_field_value，错误信息：{ex}, 尝试使用其他方式解析")
+            utils.logger.error(f"extract_data_field_value failed: {ex}, data_field_value: {data_field_value[:100]}")
             data_field_dict_value = {}
         return data_field_dict_value
 
