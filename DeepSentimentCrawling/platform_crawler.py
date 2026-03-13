@@ -40,43 +40,43 @@ class PlatformCrawler:
         """配置MediaCrawler使用我们的数据库（MySQL或PostgreSQL）"""
         try:
             # 判断数据库类型
-            db_dialect = (config.settings.DB_DIALECT or "mysql").lower()
+            db_dialect = (settings.DB_DIALECT or "mysql").lower()
             is_postgresql = db_dialect in ("postgresql", "postgres")
-            
+
             # 修改MediaCrawler的数据库配置
             db_config_path = self.mediacrawler_path / "config" / "db_config.py"
-            
+
             # 读取原始配置
             with open(db_config_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
+
             # PostgreSQL配置值：如果使用PostgreSQL则使用MindSpider配置，否则使用默认值或环境变量
-            pg_password = config.settings.DB_PASSWORD if is_postgresql else "bettafish"
-            pg_user = config.settings.DB_USER if is_postgresql else "bettafish"
-            pg_host = config.settings.DB_HOST if is_postgresql else "127.0.0.1"
-            pg_port = config.settings.DB_PORT if is_postgresql else 5432
-            pg_db_name = config.settings.DB_NAME if is_postgresql else "bettafish"
-            
+            pg_password = settings.DB_PASSWORD if is_postgresql else "bettafish"
+            pg_user = settings.DB_USER if is_postgresql else "bettafish"
+            pg_host = settings.DB_HOST if is_postgresql else "127.0.0.1"
+            pg_port = settings.DB_PORT if is_postgresql else 5432
+            pg_db_name = settings.DB_NAME if is_postgresql else "bettafish"
+
             # 替换数据库配置 - 使用MindSpider的数据库配置
-            new_config = f'''# 声明：本代码仅供学习和研究目的使用。使用者应遵守以下原则：  
-# 1. 不得用于任何商业用途。  
-# 2. 使用时应遵守目标平台的使用条款和robots.txt规则。  
-# 3. 不得进行大规模爬取或对平台造成运营干扰。  
-# 4. 应合理控制请求频率，避免给目标平台带来不必要的负担。   
+            new_config = f'''# 声明：本代码仅供学习和研究目的使用。使用者应遵守以下原则：
+# 1. 不得用于任何商业用途。
+# 2. 使用时应遵守目标平台的使用条款和robots.txt规则。
+# 3. 不得进行大规模爬取或对平台造成运营干扰。
+# 4. 应合理控制请求频率，避免给目标平台带来不必要的负担。
 # 5. 不得用于任何非法或不当的用途。
-#   
-# 详细许可条款请参阅项目根目录下的LICENSE文件。  
-# 使用本代码即表示您同意遵守上述原则和LICENSE中的所有条款。  
+#
+# 详细许可条款请参阅项目根目录下的LICENSE文件。
+# 使用本代码即表示您同意遵守上述原则和LICENSE中的所有条款。
 
 
 import os
 
 # mysql config - 使用MindSpider的数据库配置
-MYSQL_DB_PWD = "{config.settings.DB_PASSWORD}"
-MYSQL_DB_USER = "{config.settings.DB_USER}"
-MYSQL_DB_HOST = "{config.settings.DB_HOST}"
-MYSQL_DB_PORT = {config.settings.DB_PORT}
-MYSQL_DB_NAME = "{config.settings.DB_NAME}"
+MYSQL_DB_PWD = "{settings.DB_PASSWORD}"
+MYSQL_DB_USER = "{settings.DB_USER}"
+MYSQL_DB_HOST = "{settings.DB_HOST}"
+MYSQL_DB_PORT = {settings.DB_PORT}
+MYSQL_DB_NAME = "{settings.DB_NAME}"
 
 mysql_db_config = {{
     "user": MYSQL_DB_USER,
