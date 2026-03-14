@@ -234,69 +234,135 @@ class TestEmitCrawlTasks:
 
 
 class TestCookieManager:
-    """测试 cookie 保存/加载/过期周期"""
+    """测试 cookie 保存/加载/过期周期（cookie 池模式）"""
 
     def test_save_and_load(self, cookie_mgr, mock_mongo):
         """保存后应能加载"""
         cookie_mgr.save_cookies("xhs", {"web_session": "abc123", "a1": "xyz"})
 
-        # 验证 upsert 被调用
+        # 验证 upsert 被调用（按 cookie_id 匹配）
         col_mock = mock_mongo.get_collection.return_value
         col_mock.update_one.assert_called_once()
         call_args = col_mock.update_one.call_args
-        assert call_args[0][0] == {"platform": "xhs"}
+        # 匹配条件应为 cookie_id
+        assert "cookie_id" in call_args[0][0]
         doc = call_args[0][1]["$set"]
         assert doc["platform"] == "xhs"
         assert doc["cookies"]["web_session"] == "abc123"
         assert doc["status"] == "active"
+        assert "cookie_id" in doc
+
+    def test_save_returns_cookie_id(self, cookie_mgr, mock_mongo):
+        """save_cookies 应返回 cookie_id"""
+        result = cookie_mgr.save_cookies("xhs", {"web_session": "abc123"})
+        assert result.startswith("xhs_")
+        assert len(result) == len("xhs_") + 8
 
     def test_load_returns_none_when_no_cookies(self, cookie_mgr, mock_mongo):
         """无 cookie 时应返回 None"""
-        mock_mongo.find_one.return_value = None
+        col_mock = mock_mongo.get_collection.return_value
+        col_mock.find.return_value = []
         result = cookie_mgr.load_cookies("xhs")
         assert result is None
 
-    def test_load_returns_cookies_when_active(self, cookie_mgr, mock_mongo):
-        """active 状态时应返回 cookie"""
-        mock_mongo.find_one.return_value = {
-            "platform": "xhs",
-            "cookies": {"web_session": "abc"},
-            "status": "active",
-        }
+    def test_load_returns_tuple_when_active(self, cookie_mgr, mock_mongo):
+        """active 状态时应返回 (cookie_id, cookies) tuple"""
+        col_mock = mock_mongo.get_collection.return_value
+        col_mock.find.return_value = [
+            {
+                "cookie_id": "xhs_abc12345",
+                "platform": "xhs",
+                "cookies": {"web_session": "abc"},
+                "status": "active",
+            }
+        ]
         result = cookie_mgr.load_cookies("xhs")
-        assert result == {"web_session": "abc"}
+        assert result is not None
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        cookie_id, cookies = result
+        assert cookie_id == "xhs_abc12345"
+        assert cookies == {"web_session": "abc"}
+
+    def test_load_random_choice_from_pool(self, cookie_mgr, mock_mongo):
+        """多个 active cookie 时应随机选择"""
+        col_mock = mock_mongo.get_collection.return_value
+        col_mock.find.return_value = [
+            {"cookie_id": "xhs_aaa", "cookies": {"web_session": "a"}, "status": "active"},
+            {"cookie_id": "xhs_bbb", "cookies": {"web_session": "b"}, "status": "active"},
+        ]
+        results = set()
+        for _ in range(50):
+            cookie_id, _ = cookie_mgr.load_cookies("xhs")
+            results.add(cookie_id)
+        # 50 次应至少选到两个不同的
+        assert len(results) == 2
 
     @patch("DeepSentimentCrawling.cookie_manager.alert_cookie_expired")
-    def test_mark_expired_triggers_alert(self, mock_alert, cookie_mgr, mock_mongo):
-        """标记过期时应触发告警"""
-        cookie_mgr.mark_expired("xhs")
+    def test_mark_expired_with_cookie_id(self, mock_alert, cookie_mgr, mock_mongo):
+        """带 cookie_id 时只过期该条"""
+        cookie_mgr.mark_expired("xhs", cookie_id="xhs_abc12345")
 
         col_mock = mock_mongo.get_collection.return_value
         col_mock.update_one.assert_called_once()
+        filter_doc = col_mock.update_one.call_args[0][0]
+        assert filter_doc == {"cookie_id": "xhs_abc12345"}
         update_doc = col_mock.update_one.call_args[0][1]["$set"]
         assert update_doc["status"] == "expired"
         mock_alert.assert_called_once_with("xhs")
 
-    def test_get_all_status_includes_missing(self, cookie_mgr, mock_mongo):
-        """get_all_status 应补充未注册平台为 missing"""
+    @patch("DeepSentimentCrawling.cookie_manager.alert_cookie_expired")
+    def test_mark_expired_all_platform(self, mock_alert, cookie_mgr, mock_mongo):
+        """不带 cookie_id 时过期整个平台"""
+        cookie_mgr.mark_expired("xhs")
+
+        col_mock = mock_mongo.get_collection.return_value
+        col_mock.update_many.assert_called_once()
+        filter_doc = col_mock.update_many.call_args[0][0]
+        assert filter_doc == {"platform": "xhs"}
+        mock_alert.assert_called_once_with("xhs")
+
+    def test_has_active_cookies_true(self, cookie_mgr, mock_mongo):
+        """有 active cookie 时返回 True"""
+        col_mock = mock_mongo.get_collection.return_value
+        col_mock.count_documents.return_value = 2
+        assert cookie_mgr.has_active_cookies("xhs") is True
+
+    def test_has_active_cookies_false(self, cookie_mgr, mock_mongo):
+        """无 active cookie 时返回 False"""
+        col_mock = mock_mongo.get_collection.return_value
+        col_mock.count_documents.return_value = 0
+        assert cookie_mgr.has_active_cookies("xhs") is False
+
+    def test_get_all_status_includes_cookie_id(self, cookie_mgr, mock_mongo):
+        """get_all_status 应包含 cookie_id 字段"""
         mock_mongo.find.return_value = [
-            {"platform": "xhs", "status": "active", "saved_at": 1000, "expires_hint": 2000},
+            {"cookie_id": "xhs_aaa", "platform": "xhs", "status": "active", "saved_at": 1000},
+            {"cookie_id": "xhs_bbb", "platform": "xhs", "status": "expired", "saved_at": 900},
         ]
         statuses = cookie_mgr.get_all_status()
 
-        platforms = {s["platform"] for s in statuses}
-        # 应包含全部 7 个平台
-        assert "xhs" in platforms
-        assert "dy" in platforms
-        assert "bili" in platforms
-
-        # xhs 有数据
-        xhs = next(s for s in statuses if s["platform"] == "xhs")
-        assert xhs["status"] == "active"
+        # 应包含两条 xhs 记录 + 其他 missing 平台
+        xhs_entries = [s for s in statuses if s["platform"] == "xhs"]
+        assert len(xhs_entries) == 2
+        assert all("cookie_id" in s for s in xhs_entries)
 
         # 其他平台应为 missing
         dy = next(s for s in statuses if s["platform"] == "dy")
         assert dy["status"] == "missing"
+
+    def test_generate_cookie_id_deterministic(self, cookie_mgr):
+        """同一 session cookie 值应生成相同的 cookie_id"""
+        id1 = cookie_mgr._generate_cookie_id("xhs", {"web_session": "abc123"})
+        id2 = cookie_mgr._generate_cookie_id("xhs", {"web_session": "abc123"})
+        assert id1 == id2
+        assert id1.startswith("xhs_")
+
+    def test_generate_cookie_id_different_sessions(self, cookie_mgr):
+        """不同 session cookie 值应生成不同的 cookie_id"""
+        id1 = cookie_mgr._generate_cookie_id("xhs", {"web_session": "abc123"})
+        id2 = cookie_mgr._generate_cookie_id("xhs", {"web_session": "xyz789"})
+        assert id1 != id2
 
     def test_format_cookies_for_config(self):
         """cookie dict 应格式化为分号分隔字符串"""
@@ -401,12 +467,17 @@ class TestDispatcherCircuitBreaker:
 
         assert dispatcher._is_circuit_open("xhs") is True
 
-    def test_circuit_auto_resets(self, mock_mongo):
+    def test_circuit_auto_resets_on_new_cookie(self, mock_mongo):
         dispatcher = TaskDispatcher(
             platforms=["xhs"], mongo_writer=mock_mongo, dry_run=True
         )
-        # 设置熔断已过期
-        dispatcher.circuit_open_until["xhs"] = time.time() - 1
+        # 设置熔断已开启
+        dispatcher.circuit_open["xhs"] = True
+        dispatcher.failure_counts["xhs"] = 3
+
+        # 模拟 has_active_cookies 返回 True（用户已更新 cookie）
+        dispatcher.cookie_manager = MagicMock()
+        dispatcher.cookie_manager.has_active_cookies.return_value = True
 
         assert dispatcher._is_circuit_open("xhs") is False
         assert dispatcher.failure_counts["xhs"] == 0

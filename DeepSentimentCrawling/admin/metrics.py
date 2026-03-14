@@ -129,21 +129,36 @@ def get_platform_health(mongo, cookie_manager=None, dispatcher=None) -> List[Dic
     now = int(time.time())
     h24_ago = now - 86400
 
-    # cookie 状态
-    cookie_statuses = {}
+    # cookie 状态（cookie 池聚合）
+    cookie_statuses = {}  # platform -> list of cookie entries
     if cookie_manager:
         for s in cookie_manager.get_all_status():
-            cookie_statuses[s["platform"]] = s
+            plat = s["platform"]
+            if plat not in cookie_statuses:
+                cookie_statuses[plat] = []
+            cookie_statuses[plat].append(s)
 
     # 熔断器事件集合
     circuit_col = mongo.get_collection("circuit_events")
 
     result = []
     for plat in ALL_PLATFORMS:
-        # cookie 信息
-        cs = cookie_statuses.get(plat, {})
-        cookie_status = cs.get("status", "missing")
-        cookie_saved_at = cs.get("saved_at")
+        # cookie 信息（cookie 池聚合）
+        entries = cookie_statuses.get(plat, [])
+        active_count = sum(1 for e in entries if e.get("status") == "active")
+        total_count = len([e for e in entries if e.get("status") != "missing"])
+        # 综合 cookie 状态：有 active 则 active，全部过期则 expired，无记录则 missing
+        if active_count > 0:
+            cookie_status = "active"
+        elif total_count > 0:
+            cookie_status = "expired"
+        else:
+            cookie_status = "missing"
+        # 最新 saved_at
+        cookie_saved_at = max(
+            (e.get("saved_at") for e in entries if e.get("saved_at")),
+            default=None,
+        )
 
         # 熔断器状态（内存）
         circuit = "closed"
@@ -236,6 +251,8 @@ def get_platform_health(mongo, cookie_manager=None, dispatcher=None) -> List[Dic
                 "platform": plat,
                 "cookie_status": cookie_status,
                 "cookie_saved_at": cookie_saved_at,
+                "active_cookie_count": active_count,
+                "total_cookie_count": total_count,
                 "circuit_breaker": circuit,
                 "last_circuit_event": last_circuit_event,
                 "health": health,

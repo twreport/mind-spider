@@ -77,12 +77,13 @@ class PlatformWorker:
         task_id = task["task_id"]
         candidate_id = task["candidate_id"]
 
-        # 1. 加载 cookie
-        cookies = self.cookie_manager.load_cookies(platform)
-        if not cookies:
+        # 1. 加载 cookie（cookie 池模式：返回 (cookie_id, cookies) 或 None）
+        loaded = self.cookie_manager.load_cookies(platform)
+        if not loaded:
             logger.warning(f"[Worker] {platform} 无可用 cookie，任务 {task_id} 阻塞")
             alert_cookie_expired(platform)
             return {"status": "blocked", "reason": "no_cookies"}
+        cookie_id, cookies = loaded
 
         # 2. 保存 MediaCrawler 全局配置快照
         saved_config = _save_config()
@@ -133,7 +134,7 @@ class PlatformWorker:
             # 检查是否为 cookie 过期相关错误（只检查错误前 200 字符，避免 Chrome 启动参数误匹配）
             short_err = error_msg[:200].lower()
             if any(kw in short_err for kw in ["login", "cookie", "auth", "403", "未登录", "百度安全验证"]):
-                self.cookie_manager.mark_expired(platform)
+                self.cookie_manager.mark_expired(platform, cookie_id=cookie_id)
                 return {"status": "blocked", "reason": "cookie_expired", "error": error_msg}
 
             return {"status": "failed", "error": error_msg}

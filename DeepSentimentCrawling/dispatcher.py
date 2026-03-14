@@ -139,9 +139,8 @@ class TaskDispatcher:
     def _is_circuit_open(self, platform: str) -> bool:
         if not self.circuit_open.get(platform, False):
             return False
-        # 检查 cookie 是否已被用户更新（status 变回 active）
-        cookies = self.cookie_manager.load_cookies(platform)
-        if cookies:
+        # 检查 cookie 池是否有可用 cookie（用户可能已更新）
+        if self.cookie_manager.has_active_cookies(platform):
             self.circuit_open[platform] = False
             self.failure_counts[platform] = 0
             logger.info(f"[Dispatcher] {platform} cookie 已更新，熔断器恢复")
@@ -152,8 +151,8 @@ class TaskDispatcher:
     def _trip_circuit(self, platform: str, reason: str):
         self.circuit_open[platform] = True
         logger.warning(f"[Dispatcher] {platform} 熔断器触发: {reason}")
-        # 熔断时标记 cookie 失效，等用户更新后恢复
-        self.cookie_manager.mark_expired(platform)
+        # cookie 池模式下，单个 cookie 过期由 worker 负责标记，
+        # 熔断器不再批量过期所有 cookie
         alert_circuit_open(platform, reason)
         self._log_circuit_event(platform, "open", reason)
 
