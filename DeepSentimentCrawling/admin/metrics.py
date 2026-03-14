@@ -447,10 +447,10 @@ def get_volume_trend(mongo, hours: int = 48) -> Dict[str, List[Dict]]:
                 {
                     "$group": {
                         "_id": {
-                            "year": {"$year": "$completed_dt"},
-                            "month": {"$month": "$completed_dt"},
-                            "day": {"$dayOfMonth": "$completed_dt"},
-                            "hour": {"$hour": "$completed_dt"},
+                            "year": {"$year": {"date": "$completed_dt", "timezone": "Asia/Shanghai"}},
+                            "month": {"$month": {"date": "$completed_dt", "timezone": "Asia/Shanghai"}},
+                            "day": {"$dayOfMonth": {"date": "$completed_dt", "timezone": "Asia/Shanghai"}},
+                            "hour": {"$hour": {"date": "$completed_dt", "timezone": "Asia/Shanghai"}},
                         },
                         "count": {"$sum": 1},
                     }
