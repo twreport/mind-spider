@@ -563,6 +563,22 @@ def get_dashboard_html(token: str = "") -> str:
 
                 const cookieTime = p.cookie_saved_at
                     ? formatTs(p.cookie_saved_at) : '-';
+                let cookieDisplay = '';
+                const total = p.total_cookie_count || 0;
+                const active = p.active_cookie_count || 0;
+                if (total > 0) {{
+                    let color = '#52c41a';
+                    let suffix = '';
+                    if (active === 0) {{
+                        color = '#ff4d4f';
+                        suffix = ' — 全部失效';
+                    }} else if (active < total) {{
+                        color = '#faad14';
+                    }}
+                    cookieDisplay = `Cookie: <span style="color:${{color}};font-weight:600;">${{active}}/${{total}} active</span>${{suffix}} (${{cookieTime}})`;
+                }} else {{
+                    cookieDisplay = `Cookie: <span style="color:#999;">未导入</span>`;
+                }}
                 const circuit = p.circuit_breaker === 'open'
                     ? '<span style="color:#ff4d4f;font-weight:600;">OPEN</span>'
                     : '<span style="color:#52c41a;">closed</span>';
@@ -601,7 +617,7 @@ def get_dashboard_html(token: str = "") -> str:
                         ${{name}}
                     </div>
                     <div class="plat-detail">
-                        Cookie: <span>${{p.cookie_status}}</span> (${{cookieTime}})<br>
+                        ${{cookieDisplay}}<br>
                         熔断器: ${{circuit}}<br>
                         ${{circuitEventInfo}}最近任务: ${{lastInfo}}<br>
                         24h 成功率: <span>${{rate}}</span> (${{p.stats_24h.completed}}/${{p.stats_24h.total}})
