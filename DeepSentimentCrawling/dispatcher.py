@@ -46,6 +46,7 @@ class TaskDispatcher:
     CIRCUIT_THRESHOLD = 3     # 连续失败次数触发熔断
     MAX_ATTEMPTS = 3          # 单任务最大重试次数
     RETRY_BACKOFF = [120, 240, 480]  # 重试退避（秒）
+    ZOMBIE_TIMEOUT = 3600     # running 超过 60 分钟视为僵尸（秒）
 
     def __init__(
         self,
@@ -155,6 +156,59 @@ class TaskDispatcher:
         self.cookie_manager.mark_expired(platform)
         alert_circuit_open(platform, reason)
         self._log_circuit_event(platform, "open", reason)
+
+    # ==================== 僵尸任务回收 ====================
+
+    def _reap_zombie_tasks(self) -> int:
+        """
+        将超时的 running 任务重置为 pending（未耗尽重试）或 failed（已耗尽）。
+
+        返回回收的任务数量。
+        """
+        self.mongo.connect()
+        col = self.mongo.get_collection(CRAWL_TASKS_COLLECTION)
+        cutoff = int(time.time()) - self.ZOMBIE_TIMEOUT
+
+        zombies = list(col.find({
+            "status": "running",
+            "started_at": {"$lt": cutoff},
+        }))
+
+        if not zombies:
+            return 0
+
+        reaped = 0
+        for task in zombies:
+            task_id = task["task_id"]
+            attempts = task.get("attempts", 0) + 1
+            elapsed_h = (time.time() - task.get("started_at", 0)) / 3600
+
+            if attempts >= self.MAX_ATTEMPTS:
+                self._update_task_status(task_id, {
+                    "status": "failed",
+                    "attempts": attempts,
+                    "error": f"zombie_reaped: running 超时 {elapsed_h:.1f}h",
+                })
+                logger.warning(
+                    f"[Dispatcher] 僵尸回收: {task_id} ({task.get('platform')}) "
+                    f"running {elapsed_h:.1f}h, 重试耗尽 → failed"
+                )
+            else:
+                backoff = self.RETRY_BACKOFF[min(attempts - 1, len(self.RETRY_BACKOFF) - 1)]
+                self._update_task_status(task_id, {
+                    "status": "pending",
+                    "attempts": attempts,
+                    "next_retry_at": int(time.time()) + backoff,
+                    "last_error": f"zombie_reaped: running 超时 {elapsed_h:.1f}h",
+                })
+                logger.warning(
+                    f"[Dispatcher] 僵尸回收: {task_id} ({task.get('platform')}) "
+                    f"running {elapsed_h:.1f}h, 第 {attempts} 次 → pending (退避 {backoff}s)"
+                )
+            reaped += 1
+
+        logger.info(f"[Dispatcher] 本轮僵尸回收: {reaped} 个任务")
+        return reaped
 
     # ==================== 任务获取 ====================
 
@@ -474,8 +528,21 @@ class TaskDispatcher:
             f"  dry_run: {self.dry_run}"
         )
 
+        # 启动时立即回收僵尸任务（处理上次异常退出遗留的 running 任务）
+        try:
+            self._reap_zombie_tasks()
+        except Exception as e:
+            logger.error(f"[Dispatcher] 启动僵尸回收异常: {e}")
+
+        last_reap_time = time.time()
+
         while self._running:
             try:
+                # 每 5 分钟执行一次僵尸回收（避免每轮都查 MongoDB）
+                if time.time() - last_reap_time >= 300:
+                    self._reap_zombie_tasks()
+                    last_reap_time = time.time()
+
                 await self._dispatch_round()
             except Exception as e:
                 logger.error(f"[Dispatcher] 调度轮次异常: {e}")
