@@ -94,15 +94,14 @@ class CookieManager:
         except Exception as e:
             logger.warning(f"[CookieManager] 检查旧索引时异常: {e}")
 
-        # 创建新索引
-        self.mongo.create_indexes(COLLECTION, [
-            {"keys": [("cookie_id", 1)], "options": {"unique": True}},
-            {"keys": [("platform", 1), ("status", 1)]},
-        ])
-
-        # 自动迁移：为没有 cookie_id 的旧文档补充 cookie_id
+        # 自动迁移：先为旧文档补充 cookie_id，再创建 unique 索引（否则多条 null 会冲突）
         try:
-            old_docs = list(col.find({"cookie_id": {"$exists": False}}))
+            old_docs = list(col.find({
+                "$or": [
+                    {"cookie_id": {"$exists": False}},
+                    {"cookie_id": None},
+                ]
+            }))
             for doc in old_docs:
                 platform = doc.get("platform", "unknown")
                 cookies = doc.get("cookies", {})
@@ -114,6 +113,21 @@ class CookieManager:
                 logger.info(f"[CookieManager] 迁移旧文档: {platform} → {cookie_id}")
         except Exception as e:
             logger.warning(f"[CookieManager] 迁移旧文档异常: {e}")
+
+        # 删除可能残留的失败 cookie_id 索引（上次迁移前创建导致的）
+        try:
+            existing_indexes = col.index_information()
+            if "cookie_id_1" in existing_indexes:
+                col.drop_index("cookie_id_1")
+                logger.info("[CookieManager] 已删除残留的 cookie_id_1 索引，将重新创建")
+        except Exception as e:
+            logger.warning(f"[CookieManager] 清理残留索引异常: {e}")
+
+        # 创建新索引
+        self.mongo.create_indexes(COLLECTION, [
+            {"keys": [("cookie_id", 1)], "options": {"unique": True}},
+            {"keys": [("platform", 1), ("status", 1)]},
+        ])
 
     def save_cookies(self, platform: str, cookie_dict: dict) -> str:
         """保存 cookie 到 MongoDB（按 cookie_id upsert），返回 cookie_id"""
