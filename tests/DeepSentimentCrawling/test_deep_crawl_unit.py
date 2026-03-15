@@ -749,3 +749,134 @@ class TestCandidateManagerDedup:
             "测试：某重大社会事件引发热议",
             exclude_candidate_id="cand_myid",
         )
+
+
+# ==================== 8. 熔断平台 Redis 任务丢弃测试 ====================
+
+
+class TestDispatcherCircuitDrop:
+    """测试熔断时 Redis 任务丢弃（不推回），锁占用时仍推回"""
+
+    def _make_task(self, platform="wb", task_id="ct_test_wb_001", from_redis=True):
+        task = {
+            "task_id": task_id,
+            "platform": platform,
+            "topic_title": "测试话题",
+            "search_keywords": ["测试"],
+            "max_notes": 50,
+            "priority": 100,
+            "status": "pending",
+            "attempts": 0,
+        }
+        if from_redis:
+            task["_from_redis"] = True
+            task["_redis_score"] = 10000
+        return task
+
+    def test_circuit_open_drops_redis_tasks(self, mock_mongo):
+        """熔断时 Redis 任务应被丢弃，不推回"""
+        dispatcher = TaskDispatcher(
+            platforms=["wb"], mongo_writer=mock_mongo, dry_run=True
+        )
+        dispatcher.circuit_open["wb"] = True
+        dispatcher.cookie_manager = MagicMock()
+        dispatcher.cookie_manager.has_active_cookies.return_value = False
+
+        mock_queue = MagicMock()
+        dispatcher._task_queue = mock_queue
+
+        tasks = [self._make_task("wb", "ct_wb_001"), self._make_task("wb", "ct_wb_002")]
+        dispatcher._fetch_pending_tasks = MagicMock(return_value=tasks)
+
+        asyncio.get_event_loop().run_until_complete(dispatcher._dispatch_round())
+
+        # push_back 不应被调用（任务被丢弃而非推回）
+        mock_queue.push_back.assert_not_called()
+
+    def test_circuit_drop_calls_ensure_task_in_mongo(self, mock_mongo):
+        """熔断丢弃前应确保任务在 MongoDB 中存在"""
+        dispatcher = TaskDispatcher(
+            platforms=["wb"], mongo_writer=mock_mongo, dry_run=True
+        )
+        dispatcher.circuit_open["wb"] = True
+        dispatcher.cookie_manager = MagicMock()
+        dispatcher.cookie_manager.has_active_cookies.return_value = False
+
+        dispatcher._task_queue = MagicMock()
+        dispatcher._ensure_task_in_mongo = MagicMock()
+
+        tasks = [self._make_task("wb", "ct_wb_001")]
+        dispatcher._fetch_pending_tasks = MagicMock(return_value=tasks)
+
+        asyncio.get_event_loop().run_until_complete(dispatcher._dispatch_round())
+
+        dispatcher._ensure_task_in_mongo.assert_called_once_with(tasks[0])
+
+    def test_circuit_drop_log_once_per_platform(self, mock_mongo):
+        """熔断丢弃日志每平台只输出一次"""
+        dispatcher = TaskDispatcher(
+            platforms=["wb"], mongo_writer=mock_mongo, dry_run=True
+        )
+        dispatcher.circuit_open["wb"] = True
+        dispatcher.cookie_manager = MagicMock()
+        dispatcher.cookie_manager.has_active_cookies.return_value = False
+        dispatcher._task_queue = MagicMock()
+
+        tasks = [self._make_task("wb")]
+        dispatcher._fetch_pending_tasks = MagicMock(return_value=tasks)
+
+        with patch("DeepSentimentCrawling.dispatcher.logger") as mock_logger:
+            # 第一轮：应输出日志
+            asyncio.get_event_loop().run_until_complete(dispatcher._dispatch_round())
+            info_calls_round1 = [
+                c for c in mock_logger.info.call_args_list
+                if "熔断中" in str(c) and "丢弃" in str(c)
+            ]
+            assert len(info_calls_round1) == 1
+
+            mock_logger.reset_mock()
+
+            # 第二轮：同平台不应再输出
+            asyncio.get_event_loop().run_until_complete(dispatcher._dispatch_round())
+            info_calls_round2 = [
+                c for c in mock_logger.info.call_args_list
+                if "熔断中" in str(c) and "丢弃" in str(c)
+            ]
+            assert len(info_calls_round2) == 0
+
+    def test_lock_skipped_tasks_still_push_back(self, mock_mongo):
+        """锁占用时 Redis 任务应推回队列"""
+        dispatcher = TaskDispatcher(
+            platforms=["wb"], mongo_writer=mock_mongo, dry_run=True
+        )
+        dispatcher.cookie_manager = MagicMock()
+        dispatcher.cookie_manager.has_active_cookies.return_value = True
+
+        mock_queue = MagicMock()
+        dispatcher._task_queue = mock_queue
+
+        # 手动锁住平台
+        lock = dispatcher.platform_locks["wb"]
+        lock._locked = True  # asyncio.Lock 内部状态
+
+        tasks = [self._make_task("wb")]
+        dispatcher._fetch_pending_tasks = MagicMock(return_value=tasks)
+
+        asyncio.get_event_loop().run_until_complete(dispatcher._dispatch_round())
+
+        mock_queue.push_back.assert_called_once()
+
+    def test_circuit_recovery_clears_drop_log(self, mock_mongo):
+        """熔断恢复后日志标记应被清除，下次熔断可再次输出"""
+        dispatcher = TaskDispatcher(
+            platforms=["wb"], mongo_writer=mock_mongo, dry_run=True
+        )
+        dispatcher.circuit_open["wb"] = True
+        dispatcher._circuit_drop_logged.add("wb")
+
+        # 模拟 cookie 已更新 → 熔断恢复
+        dispatcher.cookie_manager = MagicMock()
+        dispatcher.cookie_manager.has_active_cookies.return_value = True
+
+        assert dispatcher._is_circuit_open("wb") is False
+        assert "wb" not in dispatcher._circuit_drop_logged

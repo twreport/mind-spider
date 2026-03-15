@@ -68,6 +68,7 @@ class TaskDispatcher:
         self.circuit_open: dict[str, bool] = {}
 
         self._running = False
+        self._circuit_drop_logged: set[str] = set()  # 熔断丢弃日志去重
 
         for plat in self.platforms:
             self.workers[plat] = PlatformWorker(cookie_manager=self.cookie_manager)
@@ -143,6 +144,7 @@ class TaskDispatcher:
         if self.cookie_manager.has_active_cookies(platform):
             self.circuit_open[platform] = False
             self.failure_counts[platform] = 0
+            self._circuit_drop_logged.discard(platform)
             logger.info(f"[Dispatcher] {platform} cookie 已更新，熔断器恢复")
             self._log_circuit_event(platform, "closed", "cookie 已更新")
             return False
@@ -461,7 +463,8 @@ class TaskDispatcher:
             return
 
         dispatched = []
-        push_back = []  # 未能调度的 Redis 任务，需推回
+        push_back = []       # 锁占用的 Redis 任务，需推回
+        circuit_dropped: dict[str, int] = {}  # 熔断丢弃计数 {platform: count}
 
         for task in tasks:
             platform = task["platform"]
@@ -469,10 +472,11 @@ class TaskDispatcher:
             if platform not in self.platforms:
                 continue
 
-            # 熔断 → 跳过
+            # 熔断 → Redis 任务直接丢弃（MongoDB 中已有记录，恢复后自然拾起）
             if self._is_circuit_open(platform):
                 if task.get("_from_redis"):
-                    push_back.append(task)
+                    self._ensure_task_in_mongo(task)
+                    circuit_dropped[platform] = circuit_dropped.get(platform, 0) + 1
                 continue
 
             # 平台锁已占用
@@ -485,7 +489,7 @@ class TaskDispatcher:
                             await self._execute_one(t)
                     dispatched.append(asyncio.create_task(_run_wait()))
                     continue
-                # 系统任务：跳过
+                # 系统任务：锁占用 → 推回 Redis（锁很快释放）
                 if task.get("_from_redis"):
                     push_back.append(task)
                 continue
@@ -497,13 +501,19 @@ class TaskDispatcher:
 
             dispatched.append(asyncio.create_task(_run()))
 
-        # 将未调度的 Redis 任务推回队列
+        # 熔断丢弃日志（每平台只输出一次，恢复后重置）
+        for plat, count in circuit_dropped.items():
+            if plat not in self._circuit_drop_logged:
+                logger.info(f"[Dispatcher] {plat} 熔断中，丢弃 {count} 个 Redis 任务（MongoDB 中已有记录，恢复后自动拾起）")
+                self._circuit_drop_logged.add(plat)
+
+        # 将锁占用的 Redis 任务推回队列
         queue = self._get_task_queue()
         if push_back and queue:
             for task in push_back:
                 score = task.get("_redis_score", 10000)
                 queue.push_back(task, score)
-            logger.debug(f"[Dispatcher] {len(push_back)} 个任务推回 Redis 队列")
+            logger.debug(f"[Dispatcher] {len(push_back)} 个任务推回 Redis 队列（锁占用）")
 
         if dispatched:
             logger.info(f"[Dispatcher] 本轮调度 {len(dispatched)} 个任务")
