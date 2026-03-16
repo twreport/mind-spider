@@ -308,7 +308,7 @@ def get_top_candidates(
 
     docs = list(
         col.find(
-            {"updated_at": {"$gte": h24_ago}},
+            {"updated_at": {"$gte": h24_ago}, "status": {"$nin": ["closed", "faded"]}},
             {
                 "candidate_id": 1,
                 "canonical_title": 1,
