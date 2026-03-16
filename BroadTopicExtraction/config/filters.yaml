@@ -1,0 +1,34 @@
+# 数据源内容过滤规则 — 在 DataReader 层拦截，阻止永驻条目进入信号检测
+
+source_blacklist:
+  # hupu_hot: 板块名而非热搜，hot_value=0
+  hupu_hot:
+    titles:
+      - 步行街主干道
+      - 历史区
+      - 恋爱区
+      - 影视区
+      - 数码区
+      - 装备区
+      - 游戏区
+      - 校园区
+      - 职场区
+      - 汽车区
+      - 股票区
+      - 健身区
+      - 家装房产区
+      - 自拍区
+      - 实战篮球区
+      - 球星卡区
+      - 美食区
+      - 动物萌宠区
+
+  # newsnow_xueqiu: 股票名/公司名，永驻条目
+  newsnow_xueqiu:
+    max_title_len: 6  # 股票名通常 2-6 字，正常热搜标题更长
+
+# 辟谣置顶识别
+pinned_debunk:
+  - source: netease_hot
+    position: 5
+    title_contains_any: ["谣言", "不实", "辟谣", "系摆拍", "处罚"]

@@ -37,7 +37,7 @@ CRAWL_TASKS_COLLECTION = "crawl_tasks"
 # 按候选状态定义爬取规模
 # 按候选状态定义爬取规模（只在进入对应状态时触发）
 _CRAWL_SCALE = {
-    "exploded":  {"platforms": 7, "max_notes": 20, "priority": 3},
+    "exploded": {"platforms": 7, "max_notes": 20, "priority": 3},
 }
 
 # 加载平台权重（从 platforms.yaml）
@@ -46,7 +46,9 @@ _PLATFORM_WEIGHTS: dict[str, float] = {}
 try:
     with open(_PLATFORMS_YAML, "r", encoding="utf-8") as _f:
         _platforms_config = yaml.safe_load(_f) or {}
-    _PLATFORM_WEIGHTS = {k: v.get("weight", 0.5) for k, v in _platforms_config.items() if isinstance(v, dict)}
+    _PLATFORM_WEIGHTS = {
+        k: v.get("weight", 0.5) for k, v in _platforms_config.items() if isinstance(v, dict)
+    }
 except Exception:
     logger.warning(f"无法加载平台权重配置: {_PLATFORMS_YAML}")
 
@@ -54,6 +56,10 @@ DEFAULT_PLATFORM_WEIGHT = 0.5  # 未配置平台的默认权重
 
 # 活跃状态（参与衰减和状态机评估）
 _ACTIVE_STATUSES = frozenset({"emerging", "rising", "confirmed", "exploded", "tracking"})
+
+CANDIDATE_TTL_SECONDS = 96 * 3600  # 候选最大存活时间 96 小时
+SOURCE_TITLES_MAX = 500  # source_titles 数组上限
+MAX_SNAPSHOTS = 200  # snapshots 数组上限（~100h @ 30min 间隔）
 
 # 默认候选阈值
 DEFAULT_CANDIDATE_THRESHOLDS = {
@@ -64,25 +70,52 @@ DEFAULT_CANDIDATE_THRESHOLDS = {
 
 # 状态机转换规则（按优先级排列，先匹配先生效）
 TRANSITION_RULES = [
+    # TTL 硬上限 — 最高优先级
+    {
+        "from": "*",
+        "to": "closed",
+        "condition": lambda c: c.get("_age_seconds", 0) >= CANDIDATE_TTL_SECONDS,
+        "reason": f"TTL expired ({CANDIDATE_TTL_SECONDS // 3600}h)",
+    },
     # 终态优先
-    {"from": "*", "to": "faded", "condition": lambda c: c["score_pos"] < 100,
-     "reason": "score_pos < 100"},
-    {"from": "tracking", "to": "closed", "condition": lambda c: c["score_pos"] < 300,
-     "reason": "score_pos < 300 while tracking"},
+    {
+        "from": "*",
+        "to": "faded",
+        "condition": lambda c: c["score_pos"] < 100,
+        "reason": "score_pos < 100",
+    },
+    {
+        "from": "tracking",
+        "to": "closed",
+        "condition": lambda c: c["score_pos"] < 300,
+        "reason": "score_pos < 300 while tracking",
+    },
     # 下降趋势
-    {"from": "*", "to": "tracking",
-     "condition": lambda c: _is_declining(c, 3),
-     "reason": "score_pos declining for 3 rounds"},
+    {
+        "from": "*",
+        "to": "tracking",
+        "condition": lambda c: _is_declining(c, 3),
+        "reason": "score_pos declining for 3 rounds",
+    },
     # 上升阶梯
-    {"from": "confirmed", "to": "exploded",
-     "condition": lambda c: c["score_pos"] >= 10000,
-     "reason": "score_pos >= 10000"},
-    {"from": "rising", "to": "confirmed",
-     "condition": lambda c: c["score_pos"] >= 4000,
-     "reason": "score_pos >= 4000"},
-    {"from": "emerging", "to": "rising",
-     "condition": lambda c: c["score_pos"] >= 1500,
-     "reason": "score_pos >= 1500"},
+    {
+        "from": "confirmed",
+        "to": "exploded",
+        "condition": lambda c: c["score_pos"] >= 10000,
+        "reason": "score_pos >= 10000",
+    },
+    {
+        "from": "rising",
+        "to": "confirmed",
+        "condition": lambda c: c["score_pos"] >= 4000,
+        "reason": "score_pos >= 4000",
+    },
+    {
+        "from": "emerging",
+        "to": "rising",
+        "condition": lambda c: c["score_pos"] >= 1500,
+        "reason": "score_pos >= 1500",
+    },
 ]
 
 
@@ -91,7 +124,7 @@ def _is_declining(candidate: dict, rounds: int) -> bool:
     snapshots = candidate.get("snapshots", [])
     if len(snapshots) < rounds + 1:
         return False
-    recent = snapshots[-(rounds + 1):]
+    recent = snapshots[-(rounds + 1) :]
     return all(recent[i]["score_pos"] > recent[i + 1]["score_pos"] for i in range(rounds))
 
 
@@ -103,14 +136,13 @@ class CandidateManager:
         signal_writer: Optional[MongoWriter] = None,
         thresholds: Optional[dict] = None,
     ):
-        self.signal_writer = signal_writer or MongoWriter(
-            db_name=settings.MONGO_SIGNAL_DB_NAME
-        )
+        self.signal_writer = signal_writer or MongoWriter(db_name=settings.MONGO_SIGNAL_DB_NAME)
         self.thresholds = {**DEFAULT_CANDIDATE_THRESHOLDS, **(thresholds or {})}
 
         # TopicMatcher 用于候选触发路径去重
         try:
             from DeepSentimentCrawling.topic_matcher import TopicMatcher
+
             self.topic_matcher = TopicMatcher(mongo=self.signal_writer)
         except Exception as e:
             logger.warning(f"[Candidate] TopicMatcher 初始化失败，候选路径去重不可用: {e}")
@@ -119,11 +151,14 @@ class CandidateManager:
     def ensure_indexes(self) -> None:
         """创建 candidates collection 索引"""
         self.signal_writer.connect()
-        self.signal_writer.create_indexes(COLLECTION, [
-            {"keys": [("candidate_id", 1)], "options": {"unique": True}},
-            {"keys": [("status", 1)]},
-            {"keys": [("updated_at", -1)]},
-        ])
+        self.signal_writer.create_indexes(
+            COLLECTION,
+            [
+                {"keys": [("candidate_id", 1)], "options": {"unique": True}},
+                {"keys": [("status", 1)]},
+                {"keys": [("updated_at", -1)]},
+            ],
+        )
 
     # ==================== 信号消费 ====================
 
@@ -195,7 +230,9 @@ class CandidateManager:
             if pos > 0:
                 return int(10000 / pos * w)
         # fallback: details 里的 position
-        pos = signal.get("details", {}).get("position") or signal.get("details", {}).get("current_position")
+        pos = signal.get("details", {}).get("position") or signal.get("details", {}).get(
+            "current_position"
+        )
         if pos and pos > 0:
             return int(10000 / pos * w)
         return 0
@@ -263,6 +300,10 @@ class CandidateManager:
                 if t and t not in candidate["source_titles"]:
                     candidate["source_titles"].append(t)
 
+        # 限制 source_titles 长度
+        if len(candidate["source_titles"]) > SOURCE_TITLES_MAX:
+            candidate["source_titles"] = candidate["source_titles"][:SOURCE_TITLES_MAX]
+
         # 合并平台
         if signal.get("signal_type") == "cross_platform":
             new_plats = signal.get("platforms", [])
@@ -285,6 +326,10 @@ class CandidateManager:
         else:
             candidate["snapshots"].append({"ts": now, "score_pos": new_score, "sum_hot": new_hot})
 
+        # 限制 snapshots 长度（保留最近的）
+        if len(candidate["snapshots"]) > MAX_SNAPSHOTS:
+            candidate["snapshots"] = candidate["snapshots"][-MAX_SNAPSHOTS:]
+
         candidate["updated_at"] = now
         candidate["_has_signal"] = True
         return candidate
@@ -302,11 +347,16 @@ class CandidateManager:
             if not cand["snapshots"]:
                 continue
             last = cand["snapshots"][-1]
-            cand["snapshots"].append({
-                "ts": now,
-                "score_pos": int(last["score_pos"] * decay),
-                "sum_hot": int(last["sum_hot"] * decay),
-            })
+            cand["snapshots"].append(
+                {
+                    "ts": now,
+                    "score_pos": int(last["score_pos"] * decay),
+                    "sum_hot": int(last["sum_hot"] * decay),
+                }
+            )
+            # 限制 snapshots 长度（保留最近的）
+            if len(cand["snapshots"]) > MAX_SNAPSHOTS:
+                cand["snapshots"] = cand["snapshots"][-MAX_SNAPSHOTS:]
             cand["updated_at"] = now
 
     # ==================== 状态机 ====================
@@ -325,6 +375,7 @@ class CandidateManager:
             ctx = {
                 "score_pos": latest["score_pos"],
                 "snapshots": cand["snapshots"],
+                "_age_seconds": now - cand.get("first_seen_at", now),
             }
 
             for rule in TRANSITION_RULES:
@@ -332,7 +383,11 @@ class CandidateManager:
                 if from_status != "*" and from_status != cand["status"]:
                     continue
                 # tracking 不能被上升规则覆盖
-                if cand["status"] == "tracking" and rule["to"] in ("rising", "confirmed", "exploded"):
+                if cand["status"] == "tracking" and rule["to"] in (
+                    "rising",
+                    "confirmed",
+                    "exploded",
+                ):
                     continue
                 try:
                     if rule["condition"](ctx):
@@ -348,11 +403,13 @@ class CandidateManager:
         """应用状态转换"""
         old_status = candidate["status"]
         candidate["status"] = new_status
-        candidate["status_history"].append({
-            "ts": now,
-            "status": new_status,
-            "reason": reason,
-        })
+        candidate["status_history"].append(
+            {
+                "ts": now,
+                "status": new_status,
+                "reason": reason,
+            }
+        )
         candidate["updated_at"] = now
         logger.info(
             f"[Candidate] {candidate['canonical_title'][:30]} "
@@ -393,7 +450,7 @@ class CandidateManager:
         all_deep_platforms = ["wb", "bili", "dy", "zhihu", "ks", "tieba", "xhs"]
 
         # 限制爬取平台数（按配置的 platforms 数量）
-        deep_platforms = all_deep_platforms[:scale["platforms"]]
+        deep_platforms = all_deep_platforms[: scale["platforms"]]
         if not deep_platforms:
             return
 
@@ -411,11 +468,13 @@ class CandidateManager:
         tasks_created = 0
         for plat in deep_platforms:
             # 去重：跳过已有活跃任务（pending/running）
-            existing = col.find_one({
-                "candidate_id": cand_id,
-                "platform": plat,
-                "status": {"$in": ["pending", "running"]},
-            })
+            existing = col.find_one(
+                {
+                    "candidate_id": cand_id,
+                    "platform": plat,
+                    "status": {"$in": ["pending", "running"]},
+                }
+            )
             if existing:
                 continue
 
@@ -436,6 +495,7 @@ class CandidateManager:
             # 推送到 Redis 任务队列
             try:
                 from DeepSentimentCrawling.task_queue import get_task_queue
+
                 queue = get_task_queue()
                 queue.push_candidate_task(cand_id, status, task_doc)
             except Exception as e:
@@ -509,9 +569,7 @@ class CandidateManager:
         logger.info(f"[Candidate] 开始消费 {len(signals)} 个信号")
 
         # 2. 加载已有活跃候选
-        existing = self.signal_writer.find(
-            COLLECTION, {"status": {"$in": list(_ACTIVE_STATUSES)}}
-        )
+        existing = self.signal_writer.find(COLLECTION, {"status": {"$in": list(_ACTIVE_STATUSES)}})
         # candidate_id -> candidate dict
         cand_map: dict[str, dict] = {c["candidate_id"]: c for c in existing}
 

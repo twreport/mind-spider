@@ -18,8 +18,9 @@ from BroadTopicExtraction.analyzer.candidate_manager import (
     _is_declining,
     _PLATFORM_WEIGHTS,
     DEFAULT_PLATFORM_WEIGHT,
+    SOURCE_TITLES_MAX,
+    MAX_SNAPSHOTS,
 )
-
 
 # ==================== 真实信号数据 fixtures ====================
 
@@ -73,12 +74,27 @@ def _make_cross_platform_signal(
     title_hash = hashlib.md5(title.encode("utf-8")).hexdigest()[:12]
     if platform_items is None:
         platform_items = {
-            "tencent": {"title": title, "position": 2, "hot_value": 3967406,
-                        "hot_value_history": [], "position_history": []},
-            "sina": {"title": "谷歌发布Gemini 3.1 Pro", "position": 25, "hot_value": 1680000,
-                     "hot_value_history": [], "position_history": []},
-            "netease": {"title": "谷歌Gemini 3.1 Pro正式发布", "position": 5, "hot_value": 3834,
-                        "hot_value_history": [], "position_history": []},
+            "tencent": {
+                "title": title,
+                "position": 2,
+                "hot_value": 3967406,
+                "hot_value_history": [],
+                "position_history": [],
+            },
+            "sina": {
+                "title": "谷歌发布Gemini 3.1 Pro",
+                "position": 25,
+                "hot_value": 1680000,
+                "hot_value_history": [],
+                "position_history": [],
+            },
+            "netease": {
+                "title": "谷歌Gemini 3.1 Pro正式发布",
+                "position": 5,
+                "hot_value": 3834,
+                "hot_value_history": [],
+                "position_history": [],
+            },
         }
     platforms = sorted(platform_items.keys())
     return {
@@ -195,16 +211,28 @@ class TestScorePosRealData:
     def test_cross_platform_17_platforms(self, manager):
         """真实数据：17 个平台的 cross_platform 信号，score_pos 受权重影响"""
         platforms = {
-            "tencent": 2, "sina": 25, "netease": 5, "douyin": 35, "baidu": 34,
-            "toutiao": 30, "ithome": 31, "juejin": 2, "36kr": 38, "cls": 19,
-            "zhihu": 44, "bilibili": 5, "tieba": 25, "huxiu": 9, "v2ex": 28,
-            "weibo": 25, "wallstreetcn": 26,
+            "tencent": 2,
+            "sina": 25,
+            "netease": 5,
+            "douyin": 35,
+            "baidu": 34,
+            "toutiao": 30,
+            "ithome": 31,
+            "juejin": 2,
+            "36kr": 38,
+            "cls": 19,
+            "zhihu": 44,
+            "bilibili": 5,
+            "tieba": 25,
+            "huxiu": 9,
+            "v2ex": 28,
+            "weibo": 25,
+            "wallstreetcn": 26,
         }
         sig = _make_cross_platform_signal(
             title="谷歌推出Gemini 3.1 Pro模型",
             platform_items={
-                p: {"title": "t", "position": pos, "hot_value": 0}
-                for p, pos in platforms.items()
+                p: {"title": "t", "position": pos, "hot_value": 0} for p, pos in platforms.items()
             },
         )
         score = manager._calc_score_pos(sig)
@@ -523,11 +551,13 @@ class TestStateMachineScenarios:
         assert cand["status"] == "exploded"
 
         # 连续 3 轮下降 → tracking
-        cand["snapshots"].extend([
-            {"ts": now + 4, "score_pos": 8000, "sum_hot": 400000},
-            {"ts": now + 5, "score_pos": 6000, "sum_hot": 300000},
-            {"ts": now + 6, "score_pos": 4000, "sum_hot": 200000},
-        ])
+        cand["snapshots"].extend(
+            [
+                {"ts": now + 4, "score_pos": 8000, "sum_hot": 400000},
+                {"ts": now + 5, "score_pos": 6000, "sum_hot": 300000},
+                {"ts": now + 6, "score_pos": 4000, "sum_hot": 200000},
+            ]
+        )
         manager._evaluate_transitions([cand], now + 6)
         assert cand["status"] == "tracking"
 
@@ -584,3 +614,69 @@ class TestDecayScenarios:
         # 1000 → 800 → 640 → 512
         assert cand["snapshots"][-1]["score_pos"] == 512
         assert cand["snapshots"][-1]["sum_hot"] == int(50000 * 0.8 * 0.8 * 0.8)
+
+
+# ==================== TTL 和数组上限 ====================
+
+
+class TestTTLAndCaps:
+    def test_ttl_forces_closed(self, manager):
+        """96h 后候选被强制 closed，即使 score_pos 很高"""
+        now = int(time.time())
+        cand = {
+            "candidate_id": "cand_ttl",
+            "canonical_title": "长期霸榜话题",
+            "status": "tracking",
+            "first_seen_at": now - 97 * 3600,
+            "snapshots": [{"ts": now, "score_pos": 200000, "sum_hot": 999999}],
+            "status_history": [{"ts": now, "status": "tracking", "reason": "test"}],
+            "updated_at": now,
+        }
+        manager._evaluate_transitions([cand], now)
+        assert cand["status"] == "closed"
+
+    def test_ttl_boundary_not_closed(self, manager):
+        """95h 的候选不应被 TTL 关闭"""
+        now = int(time.time())
+        cand = {
+            "candidate_id": "cand_ttl_ok",
+            "canonical_title": "正常话题",
+            "status": "confirmed",
+            "first_seen_at": now - 95 * 3600,
+            "snapshots": [{"ts": now, "score_pos": 5000, "sum_hot": 100000}],
+            "status_history": [{"ts": now, "status": "confirmed", "reason": "test"}],
+            "updated_at": now,
+        }
+        manager._evaluate_transitions([cand], now)
+        assert cand["status"] != "closed"
+
+    def test_source_titles_capped(self, manager):
+        """source_titles 不超过 SOURCE_TITLES_MAX"""
+        now = int(time.time())
+        cand = manager._create_candidate(_make_cross_platform_signal(), now)
+        cand["source_titles"] = [f"title_{i}" for i in range(600)]
+        sig = _make_position_jump_signal(title="new_title")
+        manager._update_candidate(cand, sig, now)
+        assert len(cand["source_titles"]) <= SOURCE_TITLES_MAX
+
+    def test_snapshots_capped_on_decay(self, manager):
+        """snapshots 不超过 MAX_SNAPSHOTS"""
+        now = int(time.time())
+        cand = {
+            "status": "tracking",
+            "snapshots": [{"ts": now - i, "score_pos": 1000, "sum_hot": 50000} for i in range(250)],
+            "updated_at": now,
+        }
+        manager._apply_decay([cand], now + 1)
+        assert len(cand["snapshots"]) <= MAX_SNAPSHOTS
+
+    def test_snapshots_capped_on_update(self, manager):
+        """_update_candidate 后 snapshots 也不超过 MAX_SNAPSHOTS"""
+        now = int(time.time())
+        cand = manager._create_candidate(_make_cross_platform_signal(), now)
+        cand["snapshots"] = [
+            {"ts": now - i, "score_pos": 1000, "sum_hot": 50000} for i in range(250)
+        ]
+        sig = _make_position_jump_signal(title="追加信号")
+        manager._update_candidate(cand, sig, now + 1)
+        assert len(cand["snapshots"]) <= MAX_SNAPSHOTS

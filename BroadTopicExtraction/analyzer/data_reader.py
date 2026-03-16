@@ -6,12 +6,13 @@ MongoDB 数据读取器
 """
 
 import time
+from pathlib import Path
 from typing import Any, Optional
 
+import yaml
 from loguru import logger
 
 from BroadTopicExtraction.pipeline.mongo_writer import MongoWriter
-
 
 # 各 collection 的字段投影
 _HOT_PROJECTION = {
@@ -51,6 +52,7 @@ class DataReader:
     def __init__(self, mongo_writer: Optional[MongoWriter] = None):
         self._owned = mongo_writer is None
         self._mongo = mongo_writer or MongoWriter()
+        self._filters = self._load_filters()
 
     def __enter__(self) -> "DataReader":
         self._mongo.connect()
@@ -96,6 +98,7 @@ class DataReader:
         projection = _HOT_VERTICAL_PROJECTION if collection == "hot_vertical" else _HOT_PROJECTION
         query = {"last_seen_at": {"$gte": since_ts}, "source": source}
         items = self._mongo.find(collection, query, projection=projection)
+        items = self._apply_filters(items)
         logger.debug(f"[DataReader] {collection}/{source}: {len(items)} 条")
         return items
 
@@ -128,13 +131,75 @@ class DataReader:
         )
         return merged
 
+    # ------ 过滤 ------
+
+    def _load_filters(self) -> dict:
+        """加载 config/filters.yaml"""
+        path = Path(__file__).parent.parent / "config" / "filters.yaml"
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+        except FileNotFoundError:
+            logger.warning(f"[DataReader] 过滤配置不存在: {path}")
+            return {}
+        # 将 titles list 转为 frozenset 加速查找
+        for _src, bl in cfg.get("source_blacklist", {}).items():
+            if "titles" in bl:
+                bl["titles"] = frozenset(bl["titles"])
+        return cfg
+
+    def _apply_filters(self, items: list[dict]) -> list[dict]:
+        """应用黑名单和辟谣置顶过滤"""
+        if not self._filters:
+            return items
+
+        blacklist = self._filters.get("source_blacklist", {})
+        debunk_rules = self._filters.get("pinned_debunk", [])
+
+        filtered = []
+        dropped = 0
+        for item in items:
+            source = item.get("source", "")
+            title = item.get("title", "")
+
+            # 1. 数据源黑名单 — 精确标题匹配 / 标题长度限制
+            bl = blacklist.get(source)
+            if bl:
+                if title in bl.get("titles", frozenset()):
+                    dropped += 1
+                    continue
+                max_len = bl.get("max_title_len")
+                if max_len and len(title) <= max_len:
+                    dropped += 1
+                    continue
+
+            # 2. 辟谣置顶
+            skip = False
+            for rule in debunk_rules:
+                if source != rule.get("source"):
+                    continue
+                if item.get("position") != rule.get("position"):
+                    continue
+                keywords = rule.get("title_contains_any", [])
+                if any(kw in title for kw in keywords):
+                    skip = True
+                    break
+            if skip:
+                dropped += 1
+                continue
+
+            filtered.append(item)
+
+        if dropped:
+            logger.info(f"[DataReader] 过滤掉 {dropped} 条永驻/置顶条目")
+        return filtered
+
     # ------ 内部方法 ------
 
-    def _query(
-        self, collection: str, since_ts: int, projection: dict
-    ) -> list[dict]:
+    def _query(self, collection: str, since_ts: int, projection: dict) -> list[dict]:
         query = {"last_seen_at": {"$gte": since_ts}}
         items = self._mongo.find(collection, query, projection=projection)
+        items = self._apply_filters(items)
         logger.debug(f"[DataReader] {collection}: {len(items)} 条 (since_ts={since_ts})")
         return items
 
