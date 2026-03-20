@@ -37,7 +37,7 @@ CRAWL_TASKS_COLLECTION = "crawl_tasks"
 TASK_STATUS_COLLECTION = "task_status"
 
 # 所有支持的平台
-ALL_PLATFORMS = ["xhs", "dy", "bili", "wb", "ks", "tieba", "zhihu"]
+ALL_PLATFORMS = ["xhs", "dy", "bili", "wb", "ks", "zhihu"]
 
 
 class TaskDispatcher:
@@ -411,17 +411,7 @@ class TaskDispatcher:
             logger.info(f"[Dispatcher] DRY RUN: 跳过任务 {task_id} ({platform})")
             return
 
-        # 确保 MongoDB 中有任务文档（用户任务可能只在 Redis 中）
-        self._ensure_task_in_mongo(task)
-
-        # 标记为 running
-        self._update_task_status(
-            task_id,
-            {
-                "status": "running",
-                "started_at": int(time.time()),
-            },
-        )
+        # running 状态已在 _dispatch_round 中提前标记
         self._insert_task_to_mysql(task)
 
         worker = self.workers.get(platform)
@@ -541,6 +531,13 @@ class TaskDispatcher:
                 if task.get("_from_redis"):
                     push_back.append(task)
                 continue
+
+            # 提前标记 running，防止下一轮调度重复拉取
+            self._ensure_task_in_mongo(task)
+            self._update_task_status(
+                task["task_id"],
+                {"status": "running", "started_at": int(time.time())},
+            )
 
             # 启动异步任务
             async def _run(t=task, p=platform):
