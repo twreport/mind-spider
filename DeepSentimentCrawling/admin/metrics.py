@@ -45,6 +45,7 @@ PLATFORM_TABLES = {
         "id_col": "video_id",
     },
     "wb": {"content": "weibo_note", "comment": "weibo_note_comment", "id_col": "note_id"},
+    "tieba": {"content": "tieba_note", "comment": "tieba_comment", "id_col": "note_id"},
     "zhihu": {"content": "zhihu_content", "comment": "zhihu_comment", "id_col": "content_id"},
 }
 
@@ -94,6 +95,15 @@ PLATFORM_FIELD_MAP = {
         "comment": "comments_count",
         "share": "shared_count",
         "time": "create_time",
+    },
+    "tieba": {
+        "nickname": "user_nickname",
+        "title": "title",
+        "desc": "desc",
+        "liked": None,
+        "comment": "total_replay_num",
+        "share": None,
+        "time": "publish_time",
     },
     "zhihu": {
         "nickname": "user_nickname",

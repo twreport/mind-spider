@@ -37,7 +37,7 @@ CRAWL_TASKS_COLLECTION = "crawl_tasks"
 TASK_STATUS_COLLECTION = "task_status"
 
 # 所有支持的平台
-ALL_PLATFORMS = ["xhs", "dy", "bili", "wb", "ks", "zhihu"]
+ALL_PLATFORMS = ["xhs", "dy", "bili", "wb", "ks", "tieba", "zhihu"]
 
 
 class TaskDispatcher:

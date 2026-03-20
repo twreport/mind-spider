@@ -13,6 +13,7 @@ PLATFORM_NAMES = {
     "bili": "B站",
     "wb": "微博",
     "ks": "快手",
+    "tieba": "贴吧",
     "zhihu": "知乎",
 }
 
@@ -280,6 +281,7 @@ def get_dashboard_html(token: str = "") -> str:
                 <option value="bili">B站</option>
                 <option value="wb">微博</option>
                 <option value="ks">快手</option>
+                <option value="tieba">贴吧</option>
                 <option value="zhihu">知乎</option>
             </select>
             <select id="filter-status">
@@ -359,6 +361,7 @@ def get_dashboard_html(token: str = "") -> str:
                 <option value="bili">B站</option>
                 <option value="wb">微博</option>
                 <option value="ks">快手</option>
+                <option value="tieba">贴吧</option>
                 <option value="zhihu">知乎</option>
             </select>
             <button onclick="loadErrors()">过滤</button>
@@ -373,7 +376,7 @@ def get_dashboard_html(token: str = "") -> str:
         const AMP_TOKEN = "{amp_token}";
         const PLATFORM_NAMES = {{
             xhs: '小红书', dy: '抖音', bili: 'B站', wb: '微博',
-            ks: '快手', zhihu: '知乎'
+            ks: '快手', tieba: '贴吧', zhihu: '知乎'
         }};
         let volumeChart = null;
         let refreshTimer = null;
@@ -750,7 +753,7 @@ def get_dashboard_html(token: str = "") -> str:
 
             const colors = {{
                 xhs: '#ff2442', dy: '#000000', bili: '#00a1d6',
-                wb: '#ff6600', ks: '#ff5000', zhihu: '#0066ff'
+                wb: '#ff6600', ks: '#ff5000', tieba: '#4e6ef2', zhihu: '#0066ff'
             }};
 
             const datasets = [];
@@ -804,7 +807,7 @@ def get_dashboard_html(token: str = "") -> str:
         }}
 
         // --- 爬取结果渲染 ---
-        const PLAT_ORDER = ['xhs', 'dy', 'ks', 'bili', 'wb', 'zhihu'];
+        const PLAT_ORDER = ['xhs', 'dy', 'ks', 'bili', 'wb', 'tieba', 'zhihu'];
 
         function renderCrawlResults(data) {{
             const tbody = document.getElementById('crawl-results-body');

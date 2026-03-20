@@ -88,7 +88,7 @@ def _extract_platform(message: str) -> Optional[str]:
     m = _PLATFORM_PATTERN.search(message)
     if m:
         plat = m.group(1).lower()
-        valid = {"xhs", "dy", "bili", "wb", "ks", "zhihu"}
+        valid = {"xhs", "dy", "bili", "wb", "ks", "tieba", "zhihu"}
         if plat in valid:
             return plat
     return None
