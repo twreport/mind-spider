@@ -128,13 +128,17 @@ class PlatformWorker:
             # 6. 获取实际爬取数量
             crawled_count = self._get_crawled_count(crawler)
             logger.info(f"[Worker] 任务 {task_id} 执行成功, 爬取 {crawled_count} 条内容")
-            return {"status": "success", "total_crawled": crawled_count}
+            return {"status": "success", "total_crawled": crawled_count, "cookie_id": cookie_id}
 
         except asyncio.TimeoutError:
             logger.error(
                 f"[Worker] 任务 {task_id} 超时 ({self.TASK_TIMEOUT}s), " f"platform={platform}"
             )
-            return {"status": "failed", "error": f"timeout_{self.TASK_TIMEOUT}s"}
+            return {
+                "status": "failed",
+                "error": f"timeout_{self.TASK_TIMEOUT}s",
+                "cookie_id": cookie_id,
+            }
 
         except Exception as e:
             error_msg = f"{type(e).__name__}: {e}"
@@ -147,9 +151,14 @@ class PlatformWorker:
                 for kw in ["login", "cookie", "auth", "403", "未登录", "百度安全验证"]
             ):
                 self.cookie_manager.mark_expired(platform, cookie_id=cookie_id)
-                return {"status": "blocked", "reason": "cookie_expired", "error": error_msg}
+                return {
+                    "status": "blocked",
+                    "reason": "cookie_expired",
+                    "error": error_msg,
+                    "cookie_id": cookie_id,
+                }
 
-            return {"status": "failed", "error": error_msg}
+            return {"status": "failed", "error": error_msg, "cookie_id": cookie_id}
 
         finally:
             # 7. 恢复 config 快照

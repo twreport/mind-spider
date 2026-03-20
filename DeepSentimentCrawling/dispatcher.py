@@ -440,10 +440,21 @@ class TaskDispatcher:
             # 连续空结果计入失败计数，触发熔断以避免浪费后续任务
             if total_crawled == 0:
                 self.failure_counts[platform] = self.failure_counts.get(platform, 0) + 1
-                logger.warning(
-                    f"[Dispatcher] 任务 {task_id} 爬取 0 条内容，"
-                    f"{platform} 连续空结果 {self.failure_counts[platform]} 次"
-                )
+                # 标记当前 cookie 过期（crawler 内部吞掉了 DataFetchError，
+                # 不会抛到 worker 层，只能靠 0 结果推断 cookie 失效）
+                used_cookie_id = result.get("cookie_id")
+                if used_cookie_id:
+                    self.cookie_manager.mark_expired(platform, cookie_id=used_cookie_id)
+                    logger.warning(
+                        f"[Dispatcher] 任务 {task_id} 爬取 0 条，"
+                        f"标记 cookie {used_cookie_id} 过期，"
+                        f"{platform} 连续空结果 {self.failure_counts[platform]} 次"
+                    )
+                else:
+                    logger.warning(
+                        f"[Dispatcher] 任务 {task_id} 爬取 0 条内容，"
+                        f"{platform} 连续空结果 {self.failure_counts[platform]} 次"
+                    )
                 if self.failure_counts[platform] >= self.CIRCUIT_THRESHOLD:
                     self._trip_circuit(platform, f"连续 {self.CIRCUIT_THRESHOLD} 次爬取 0 条内容")
 
