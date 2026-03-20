@@ -39,47 +39,69 @@ PLATFORM_TABLES = {
     "xhs": {"content": "xhs_note", "comment": "xhs_note_comment", "id_col": "note_id"},
     "dy": {"content": "douyin_aweme", "comment": "douyin_aweme_comment", "id_col": "aweme_id"},
     "ks": {"content": "kuaishou_video", "comment": "kuaishou_video_comment", "id_col": "video_id"},
-    "bili": {"content": "bilibili_video", "comment": "bilibili_video_comment", "id_col": "video_id"},
+    "bili": {
+        "content": "bilibili_video",
+        "comment": "bilibili_video_comment",
+        "id_col": "video_id",
+    },
     "wb": {"content": "weibo_note", "comment": "weibo_note_comment", "id_col": "note_id"},
-    "tieba": {"content": "tieba_note", "comment": "tieba_comment", "id_col": "note_id"},
     "zhihu": {"content": "zhihu_content", "comment": "zhihu_comment", "id_col": "content_id"},
 }
 
 # 各平台字段映射 → 统一为 nickname, title, liked_count, comment_count, share_count, create_time
 PLATFORM_FIELD_MAP = {
     "xhs": {
-        "nickname": "nickname", "title": "title", "desc": "desc",
-        "liked": "liked_count", "comment": "comment_count", "share": "share_count",
+        "nickname": "nickname",
+        "title": "title",
+        "desc": "desc",
+        "liked": "liked_count",
+        "comment": "comment_count",
+        "share": "share_count",
         "time": "time",
     },
     "dy": {
-        "nickname": "nickname", "title": "title", "desc": "desc",
-        "liked": "liked_count", "comment": "comment_count", "share": "share_count",
+        "nickname": "nickname",
+        "title": "title",
+        "desc": "desc",
+        "liked": "liked_count",
+        "comment": "comment_count",
+        "share": "share_count",
         "time": "create_time",
     },
     "ks": {
-        "nickname": "nickname", "title": "title", "desc": "desc",
-        "liked": "liked_count", "comment": None, "share": None,
+        "nickname": "nickname",
+        "title": "title",
+        "desc": "desc",
+        "liked": "liked_count",
+        "comment": None,
+        "share": None,
         "time": "create_time",
     },
     "bili": {
-        "nickname": "nickname", "title": "title", "desc": "desc",
-        "liked": "liked_count", "comment": "video_comment", "share": "video_share_count",
+        "nickname": "nickname",
+        "title": "title",
+        "desc": "desc",
+        "liked": "liked_count",
+        "comment": "video_comment",
+        "share": "video_share_count",
         "time": "create_time",
     },
     "wb": {
-        "nickname": "nickname", "title": None, "desc": "content",
-        "liked": "liked_count", "comment": "comments_count", "share": "shared_count",
+        "nickname": "nickname",
+        "title": None,
+        "desc": "content",
+        "liked": "liked_count",
+        "comment": "comments_count",
+        "share": "shared_count",
         "time": "create_time",
     },
-    "tieba": {
-        "nickname": "user_nickname", "title": "title", "desc": "desc",
-        "liked": None, "comment": "total_replay_num", "share": None,
-        "time": "publish_time",
-    },
     "zhihu": {
-        "nickname": "user_nickname", "title": "title", "desc": "content_text",
-        "liked": "voteup_count", "comment": "comment_count", "share": None,
+        "nickname": "user_nickname",
+        "title": "title",
+        "desc": "content_text",
+        "liked": "voteup_count",
+        "comment": "comment_count",
+        "share": None,
         "time": "created_time",
     },
 }
@@ -214,12 +236,14 @@ def get_platform_health(mongo, cookie_manager=None, dispatcher=None) -> List[Dic
         # 检测最近 3 个 completed 任务是否全部 0 结果
         all_recent_zero = False
         if completed_24h > 0:
-            recent_completed = list(col.find(
-                {"platform": plat, "status": "completed"},
-                {"total_crawled": 1, "_id": 0},
-                sort=[("completed_at", -1)],
-                limit=3,
-            ))
+            recent_completed = list(
+                col.find(
+                    {"platform": plat, "status": "completed"},
+                    {"total_crawled": 1, "_id": 0},
+                    sort=[("completed_at", -1)],
+                    limit=3,
+                )
+            )
             if recent_completed and all(
                 doc.get("total_crawled", 0) == 0 for doc in recent_completed
             ):
@@ -368,7 +392,7 @@ def get_top_candidates(
 
     candidates.sort(key=_sort_val, reverse=reverse)
     total = len(candidates)
-    return {"total": total, "items": candidates[offset:offset + limit]}
+    return {"total": total, "items": candidates[offset : offset + limit]}
 
 
 def get_candidate_detail(mongo, candidate_id: str) -> Optional[Dict]:
@@ -447,10 +471,21 @@ def get_volume_trend(mongo, hours: int = 48) -> Dict[str, List[Dict]]:
                 {
                     "$group": {
                         "_id": {
-                            "year": {"$year": {"date": "$completed_dt", "timezone": "Asia/Shanghai"}},
-                            "month": {"$month": {"date": "$completed_dt", "timezone": "Asia/Shanghai"}},
-                            "day": {"$dayOfMonth": {"date": "$completed_dt", "timezone": "Asia/Shanghai"}},
-                            "hour": {"$hour": {"date": "$completed_dt", "timezone": "Asia/Shanghai"}},
+                            "year": {
+                                "$year": {"date": "$completed_dt", "timezone": "Asia/Shanghai"}
+                            },
+                            "month": {
+                                "$month": {"date": "$completed_dt", "timezone": "Asia/Shanghai"}
+                            },
+                            "day": {
+                                "$dayOfMonth": {
+                                    "date": "$completed_dt",
+                                    "timezone": "Asia/Shanghai",
+                                }
+                            },
+                            "hour": {
+                                "$hour": {"date": "$completed_dt", "timezone": "Asia/Shanghai"}
+                            },
                         },
                         "count": {"$sum": 1},
                     }
@@ -557,14 +592,16 @@ def get_crawl_results(limit: int = 20) -> List[Dict]:
                     total_content += cnt
                     total_comments += cmt
 
-                results.append({
-                    "topic_id": tid,
-                    "topic_name": topic["topic_name"],
-                    "last_date": topic["last_date"],
-                    "platforms": platform_counts,
-                    "total_content": total_content,
-                    "total_comments": total_comments,
-                })
+                results.append(
+                    {
+                        "topic_id": tid,
+                        "topic_name": topic["topic_name"],
+                        "last_date": topic["last_date"],
+                        "platforms": platform_counts,
+                        "total_content": total_content,
+                        "total_comments": total_comments,
+                    }
+                )
 
             return results
     except Exception as e:
@@ -642,16 +679,22 @@ def get_topic_contents(topic_id: str) -> Dict:
                     # 标题：优先 title，fallback desc 截断
                     title_val = row[2] or ""
                     desc_val = row[3] or ""
-                    display_title = title_val if title_val else (desc_val[:80] + "..." if len(desc_val) > 80 else desc_val)
+                    display_title = (
+                        title_val
+                        if title_val
+                        else (desc_val[:80] + "..." if len(desc_val) > 80 else desc_val)
+                    )
 
-                    items.append({
-                        "nickname": row[1] or "",
-                        "title": display_title,
-                        "liked": str(row[4] or 0),
-                        "comments": str(row[5] or 0),
-                        "shares": str(row[6] or 0),
-                        "pub_time": str(row[7] or ""),
-                    })
+                    items.append(
+                        {
+                            "nickname": row[1] or "",
+                            "title": display_title,
+                            "liked": str(row[4] or 0),
+                            "comments": str(row[5] or 0),
+                            "shares": str(row[6] or 0),
+                            "pub_time": str(row[7] or ""),
+                        }
+                    )
                 result[plat] = items
 
             return result
