@@ -9,6 +9,7 @@ TaskDispatcher — 异步任务调度器
   1. Redis 队列（user 任务 > candidate 任务）
   2. MongoDB 轮询（重试任务、Redis 之前遗留的任务）
 """
+
 import asyncio
 import json
 import time
@@ -42,11 +43,11 @@ ALL_PLATFORMS = ["xhs", "dy", "bili", "wb", "ks", "tieba", "zhihu"]
 class TaskDispatcher:
     """异步爬取任务调度器"""
 
-    POLL_INTERVAL = 10        # 轮询间隔（秒）
-    CIRCUIT_THRESHOLD = 3     # 连续失败次数触发熔断
-    MAX_ATTEMPTS = 3          # 单任务最大重试次数
+    POLL_INTERVAL = 10  # 轮询间隔（秒）
+    CIRCUIT_THRESHOLD = 3  # 连续失败次数触发熔断
+    MAX_ATTEMPTS = 3  # 单任务最大重试次数
     RETRY_BACKOFF = [120, 240, 480]  # 重试退避（秒）
-    ZOMBIE_TIMEOUT = 3600     # running 超过 60 分钟视为僵尸（秒）
+    ZOMBIE_TIMEOUT = 3600  # running 超过 60 分钟视为僵尸（秒）
 
     def __init__(
         self,
@@ -68,6 +69,7 @@ class TaskDispatcher:
         self.circuit_open: dict[str, bool] = {}
 
         self._running = False
+        self._running_tasks: set[asyncio.Task] = set()  # fire-and-forget 任务跟踪
         self._circuit_drop_logged: set[str] = set()  # 熔断丢弃日志去重
 
         for plat in self.platforms:
@@ -95,7 +97,9 @@ class TaskDispatcher:
                     f"{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
                     f"?charset={settings.DB_CHARSET}"
                 )
-            self._mysql_engine = create_engine(url, future=True, pool_recycle=3600, pool_pre_ping=True)
+            self._mysql_engine = create_engine(
+                url, future=True, pool_recycle=3600, pool_pre_ping=True
+            )
         return self._mysql_engine
 
     def _get_task_queue(self):
@@ -103,6 +107,7 @@ class TaskDispatcher:
         if self._task_queue is None:
             try:
                 from DeepSentimentCrawling.task_queue import get_task_queue
+
                 self._task_queue = get_task_queue()
             except Exception as e:
                 logger.warning(f"[Dispatcher] Redis 不可用: {e}")
@@ -111,16 +116,22 @@ class TaskDispatcher:
     def ensure_indexes(self):
         """创建 crawl_tasks 索引"""
         self.mongo.connect()
-        self.mongo.create_indexes(CRAWL_TASKS_COLLECTION, [
-            {"keys": [("task_id", 1)], "options": {"unique": True}},
-            {"keys": [("status", 1), ("priority", -1), ("created_at", 1)]},
-            {"keys": [("candidate_id", 1), ("platform", 1)]},
-        ])
-        self.mongo.create_indexes(TASK_STATUS_COLLECTION, [
-            {"keys": [("task_id", 1)]},
-            {"keys": [("status", 1)]},
-            {"keys": [("updated_at", -1)]},
-        ])
+        self.mongo.create_indexes(
+            CRAWL_TASKS_COLLECTION,
+            [
+                {"keys": [("task_id", 1)], "options": {"unique": True}},
+                {"keys": [("status", 1), ("priority", -1), ("created_at", 1)]},
+                {"keys": [("candidate_id", 1), ("platform", 1)]},
+            ],
+        )
+        self.mongo.create_indexes(
+            TASK_STATUS_COLLECTION,
+            [
+                {"keys": [("task_id", 1)]},
+                {"keys": [("status", 1)]},
+                {"keys": [("updated_at", -1)]},
+            ],
+        )
 
     # ==================== 熔断器 ====================
 
@@ -128,12 +139,14 @@ class TaskDispatcher:
         """记录熔断器事件到 MongoDB"""
         try:
             col = self.mongo.get_collection("circuit_events")
-            col.insert_one({
-                "platform": platform,
-                "event": event,        # "open" | "closed"
-                "reason": reason,
-                "timestamp": int(time.time()),
-            })
+            col.insert_one(
+                {
+                    "platform": platform,
+                    "event": event,  # "open" | "closed"
+                    "reason": reason,
+                    "timestamp": int(time.time()),
+                }
+            )
         except Exception as e:
             logger.warning(f"[Dispatcher] circuit_events 写入失败: {e}")
 
@@ -170,10 +183,14 @@ class TaskDispatcher:
         col = self.mongo.get_collection(CRAWL_TASKS_COLLECTION)
         cutoff = int(time.time()) - self.ZOMBIE_TIMEOUT
 
-        zombies = list(col.find({
-            "status": "running",
-            "started_at": {"$lt": cutoff},
-        }))
+        zombies = list(
+            col.find(
+                {
+                    "status": "running",
+                    "started_at": {"$lt": cutoff},
+                }
+            )
+        )
 
         if not zombies:
             return 0
@@ -185,23 +202,29 @@ class TaskDispatcher:
             elapsed_h = (time.time() - task.get("started_at", 0)) / 3600
 
             if attempts >= self.MAX_ATTEMPTS:
-                self._update_task_status(task_id, {
-                    "status": "failed",
-                    "attempts": attempts,
-                    "error": f"zombie_reaped: running 超时 {elapsed_h:.1f}h",
-                })
+                self._update_task_status(
+                    task_id,
+                    {
+                        "status": "failed",
+                        "attempts": attempts,
+                        "error": f"zombie_reaped: running 超时 {elapsed_h:.1f}h",
+                    },
+                )
                 logger.warning(
                     f"[Dispatcher] 僵尸回收: {task_id} ({task.get('platform')}) "
                     f"running {elapsed_h:.1f}h, 重试耗尽 → failed"
                 )
             else:
                 backoff = self.RETRY_BACKOFF[min(attempts - 1, len(self.RETRY_BACKOFF) - 1)]
-                self._update_task_status(task_id, {
-                    "status": "pending",
-                    "attempts": attempts,
-                    "next_retry_at": int(time.time()) + backoff,
-                    "last_error": f"zombie_reaped: running 超时 {elapsed_h:.1f}h",
-                })
+                self._update_task_status(
+                    task_id,
+                    {
+                        "status": "pending",
+                        "attempts": attempts,
+                        "next_retry_at": int(time.time()) + backoff,
+                        "last_error": f"zombie_reaped: running 超时 {elapsed_h:.1f}h",
+                    },
+                )
                 logger.warning(
                     f"[Dispatcher] 僵尸回收: {task_id} ({task.get('platform')}) "
                     f"running {elapsed_h:.1f}h, 第 {attempts} 次 → pending (退避 {backoff}s)"
@@ -283,11 +306,13 @@ class TaskDispatcher:
     def _log_task_status_change(self, task_id: str, updates: dict) -> None:
         try:
             status_col = self.mongo.get_collection(TASK_STATUS_COLLECTION)
-            status_col.insert_one({
-                "task_id": task_id,
-                "status": updates.get("status"),
-                "updated_at": int(time.time()),
-            })
+            status_col.insert_one(
+                {
+                    "task_id": task_id,
+                    "status": updates.get("status"),
+                    "updated_at": int(time.time()),
+                }
+            )
         except Exception as e:
             logger.warning(f"[Dispatcher] task_status 日志写入失败 {task_id}: {e}")
 
@@ -332,14 +357,18 @@ class TaskDispatcher:
         try:
             engine = self._get_mysql_engine()
             now_ts = int(time.time())
-            config_params = json.dumps({
-                "max_notes": task.get("max_notes"),
-                "priority": task.get("priority"),
-                "topic_title": task.get("topic_title", ""),
-            }, ensure_ascii=False)
+            config_params = json.dumps(
+                {
+                    "max_notes": task.get("max_notes"),
+                    "priority": task.get("priority"),
+                    "topic_title": task.get("topic_title", ""),
+                },
+                ensure_ascii=False,
+            )
 
             with engine.begin() as conn:
-                conn.execute(text("""
+                conn.execute(
+                    text("""
                     INSERT INTO crawling_tasks
                         (task_id, topic_id, platform, search_keywords,
                          task_status, start_time, config_params,
@@ -349,19 +378,25 @@ class TaskDispatcher:
                          'pending', :start_time, :config_params,
                          :scheduled_date, :add_ts, :last_modify_ts)
                     ON DUPLICATE KEY UPDATE last_modify_ts = :last_modify_ts
-                """), {
-                    "task_id": task["task_id"],
-                    "topic_id": None if task.get("candidate_id", "").startswith("user") else task.get("candidate_id", ""),
-                    "platform": task["platform"],
-                    "search_keywords": json.dumps(
-                        task.get("search_keywords", []), ensure_ascii=False
-                    ),
-                    "start_time": now_ts,
-                    "config_params": config_params,
-                    "scheduled_date": date.today(),
-                    "add_ts": now_ts,
-                    "last_modify_ts": now_ts,
-                })
+                """),
+                    {
+                        "task_id": task["task_id"],
+                        "topic_id": (
+                            None
+                            if task.get("candidate_id", "").startswith("user")
+                            else task.get("candidate_id", "")
+                        ),
+                        "platform": task["platform"],
+                        "search_keywords": json.dumps(
+                            task.get("search_keywords", []), ensure_ascii=False
+                        ),
+                        "start_time": now_ts,
+                        "config_params": config_params,
+                        "scheduled_date": date.today(),
+                        "add_ts": now_ts,
+                        "last_modify_ts": now_ts,
+                    },
+                )
         except Exception as e:
             logger.warning(f"[Dispatcher] MySQL 任务插入失败 {task.get('task_id')}: {e}")
 
@@ -380,10 +415,13 @@ class TaskDispatcher:
         self._ensure_task_in_mongo(task)
 
         # 标记为 running
-        self._update_task_status(task_id, {
-            "status": "running",
-            "started_at": int(time.time()),
-        })
+        self._update_task_status(
+            task_id,
+            {
+                "status": "running",
+                "started_at": int(time.time()),
+            },
+        )
         self._insert_task_to_mysql(task)
 
         worker = self.workers.get(platform)
@@ -397,12 +435,15 @@ class TaskDispatcher:
 
         if status == "success":
             total_crawled = result.get("total_crawled", 0)
-            self._update_task_status(task_id, {
-                "status": "completed",
-                "completed_at": int(time.time()),
-                "total_crawled": total_crawled,
-                "success_count": total_crawled,
-            })
+            self._update_task_status(
+                task_id,
+                {
+                    "status": "completed",
+                    "completed_at": int(time.time()),
+                    "total_crawled": total_crawled,
+                    "success_count": total_crawled,
+                },
+            )
             self.failure_counts[platform] = 0
             logger.info(f"[Dispatcher] 任务 {task_id} 完成, 爬取 {total_crawled} 条")
 
@@ -429,25 +470,30 @@ class TaskDispatcher:
             self.failure_counts[platform] = self.failure_counts.get(platform, 0) + 1
 
             if attempts >= self.MAX_ATTEMPTS:
-                self._update_task_status(task_id, {
-                    "status": "failed",
-                    "attempts": attempts,
-                    "error": result.get("error", "unknown"),
-                    "end_time": int(time.time()),
-                })
+                self._update_task_status(
+                    task_id,
+                    {
+                        "status": "failed",
+                        "attempts": attempts,
+                        "error": result.get("error", "unknown"),
+                        "end_time": int(time.time()),
+                    },
+                )
                 logger.warning(f"[Dispatcher] 任务 {task_id} 重试耗尽，标记为失败")
             else:
                 backoff = self.RETRY_BACKOFF[min(attempts - 1, len(self.RETRY_BACKOFF) - 1)]
                 next_retry = int(time.time()) + backoff
-                self._update_task_status(task_id, {
-                    "status": "pending",
-                    "attempts": attempts,
-                    "next_retry_at": next_retry,
-                    "last_error": result.get("error", "unknown"),
-                })
+                self._update_task_status(
+                    task_id,
+                    {
+                        "status": "pending",
+                        "attempts": attempts,
+                        "next_retry_at": next_retry,
+                        "last_error": result.get("error", "unknown"),
+                    },
+                )
                 logger.info(
-                    f"[Dispatcher] 任务 {task_id} 第 {attempts} 次失败，"
-                    f"{backoff}s 后重试"
+                    f"[Dispatcher] 任务 {task_id} 第 {attempts} 次失败，" f"{backoff}s 后重试"
                 )
 
             # 检查熔断
@@ -463,7 +509,7 @@ class TaskDispatcher:
             return
 
         dispatched = []
-        push_back = []       # 锁占用的 Redis 任务，需推回
+        push_back = []  # 锁占用的 Redis 任务，需推回
         circuit_dropped: dict[str, int] = {}  # 熔断丢弃计数 {platform: count}
 
         for task in tasks:
@@ -484,9 +530,11 @@ class TaskDispatcher:
             if lock and lock.locked():
                 # user 任务：等锁（create_task 会排队获取锁后执行）
                 if task.get("_source") == "user":
+
                     async def _run_wait(t=task, p=platform):
                         async with self.platform_locks[p]:
                             await self._execute_one(t)
+
                     dispatched.append(asyncio.create_task(_run_wait()))
                     continue
                 # 系统任务：锁占用 → 推回 Redis（锁很快释放）
@@ -504,7 +552,9 @@ class TaskDispatcher:
         # 熔断丢弃日志（每平台只输出一次，恢复后重置）
         for plat, count in circuit_dropped.items():
             if plat not in self._circuit_drop_logged:
-                logger.info(f"[Dispatcher] {plat} 熔断中，丢弃 {count} 个 Redis 任务（MongoDB 中已有记录，恢复后自动拾起）")
+                logger.info(
+                    f"[Dispatcher] {plat} 熔断中，丢弃 {count} 个 Redis 任务（MongoDB 中已有记录，恢复后自动拾起）"
+                )
                 self._circuit_drop_logged.add(plat)
 
         # 将锁占用的 Redis 任务推回队列
@@ -517,7 +567,18 @@ class TaskDispatcher:
 
         if dispatched:
             logger.info(f"[Dispatcher] 本轮调度 {len(dispatched)} 个任务")
-            await asyncio.gather(*dispatched, return_exceptions=True)
+            for t in dispatched:
+                self._running_tasks.add(t)
+                t.add_done_callback(self._running_tasks.discard)
+
+    async def _zombie_reaper_loop(self):
+        """独立的僵尸回收循环（不受调度阻塞影响）"""
+        while self._running:
+            try:
+                self._reap_zombie_tasks()
+            except Exception as e:
+                logger.error(f"[Dispatcher] 僵尸回收异常: {e}")
+            await asyncio.sleep(300)
 
     async def run(self):
         """启动调度主循环"""
@@ -543,15 +604,11 @@ class TaskDispatcher:
         except Exception as e:
             logger.error(f"[Dispatcher] 启动僵尸回收异常: {e}")
 
-        last_reap_time = time.time()
+        # 启动独立僵尸回收循环
+        asyncio.create_task(self._zombie_reaper_loop())
 
         while self._running:
             try:
-                # 每 5 分钟执行一次僵尸回收（避免每轮都查 MongoDB）
-                if time.time() - last_reap_time >= 300:
-                    self._reap_zombie_tasks()
-                    last_reap_time = time.time()
-
                 await self._dispatch_round()
             except Exception as e:
                 logger.error(f"[Dispatcher] 调度轮次异常: {e}")
@@ -571,8 +628,7 @@ class TaskDispatcher:
             "completed": col.count_documents({"status": "completed"}),
             "failed": col.count_documents({"status": "failed"}),
             "circuit_breakers": {
-                p: "open" if self._is_circuit_open(p) else "closed"
-                for p in self.platforms
+                p: "open" if self._is_circuit_open(p) else "closed" for p in self.platforms
             },
         }
         queue = self._get_task_queue()

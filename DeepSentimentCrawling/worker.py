@@ -6,6 +6,7 @@ PlatformWorker — 在进程内调用 MediaCrawler 执行单个爬取任务
 每个任务执行前设置 ContextVar 以便 store 层写入 topic_id 和 crawling_task_id。
 """
 
+import asyncio
 import sys
 import traceback
 from pathlib import Path
@@ -59,6 +60,8 @@ def _restore_config(saved: dict) -> None:
 
 class PlatformWorker:
     """单平台爬取任务执行器"""
+
+    TASK_TIMEOUT = 1800  # 单任务最大执行时间（30 分钟）
 
     def __init__(self, cookie_manager: Optional[CookieManager] = None):
         self.cookie_manager = cookie_manager or CookieManager()
@@ -120,12 +123,18 @@ class PlatformWorker:
                 f"max_notes={task.get('max_notes')}"
             )
 
-            await crawler.start()
+            await asyncio.wait_for(crawler.start(), timeout=self.TASK_TIMEOUT)
 
             # 6. 获取实际爬取数量
             crawled_count = self._get_crawled_count(crawler)
             logger.info(f"[Worker] 任务 {task_id} 执行成功, 爬取 {crawled_count} 条内容")
             return {"status": "success", "total_crawled": crawled_count}
+
+        except asyncio.TimeoutError:
+            logger.error(
+                f"[Worker] 任务 {task_id} 超时 ({self.TASK_TIMEOUT}s), " f"platform={platform}"
+            )
+            return {"status": "failed", "error": f"timeout_{self.TASK_TIMEOUT}s"}
 
         except Exception as e:
             error_msg = f"{type(e).__name__}: {e}"
@@ -133,7 +142,10 @@ class PlatformWorker:
 
             # 检查是否为 cookie 过期相关错误（只检查错误前 200 字符，避免 Chrome 启动参数误匹配）
             short_err = error_msg[:200].lower()
-            if any(kw in short_err for kw in ["login", "cookie", "auth", "403", "未登录", "百度安全验证"]):
+            if any(
+                kw in short_err
+                for kw in ["login", "cookie", "auth", "403", "未登录", "百度安全验证"]
+            ):
                 self.cookie_manager.mark_expired(platform, cookie_id=cookie_id)
                 return {"status": "blocked", "reason": "cookie_expired", "error": error_msg}
 
@@ -146,8 +158,12 @@ class PlatformWorker:
     @staticmethod
     def _get_crawled_count(crawler) -> int:
         """从 crawler 实例获取实际爬取的内容数量"""
-        for attr in ("_crawled_note_ids", "_crawled_aweme_ids",
-                     "_crawled_video_ids", "_crawled_content_ids"):
+        for attr in (
+            "_crawled_note_ids",
+            "_crawled_aweme_ids",
+            "_crawled_video_ids",
+            "_crawled_content_ids",
+        ):
             ids = getattr(crawler, attr, None)
             if ids is not None:
                 return len(ids)
