@@ -48,6 +48,7 @@ class TaskDispatcher:
     MAX_ATTEMPTS = 3  # 单任务最大重试次数
     RETRY_BACKOFF = [120, 240, 480]  # 重试退避（秒）
     ZOMBIE_TIMEOUT = 3600  # running 超过 60 分钟视为僵尸（秒）
+    STALE_PENDING_TIMEOUT = 1800  # pending 超过 30 分钟视为过期（秒）
 
     def __init__(
         self,
@@ -122,6 +123,7 @@ class TaskDispatcher:
                 {"keys": [("task_id", 1)], "options": {"unique": True}},
                 {"keys": [("status", 1), ("priority", -1), ("created_at", 1)]},
                 {"keys": [("candidate_id", 1), ("platform", 1)]},
+                {"keys": [("status", 1), ("pending_since", 1)]},
             ],
         )
         self.mongo.create_indexes(
@@ -223,6 +225,7 @@ class TaskDispatcher:
                         "attempts": attempts,
                         "next_retry_at": int(time.time()) + backoff,
                         "last_error": f"zombie_reaped: running 超时 {elapsed_h:.1f}h",
+                        "pending_since": int(time.time()),
                     },
                 )
                 logger.warning(
@@ -233,6 +236,64 @@ class TaskDispatcher:
 
         logger.info(f"[Dispatcher] 本轮僵尸回收: {reaped} 个任务")
         return reaped
+
+    def _reap_stale_pending_tasks(self) -> int:
+        """将超时的 pending 任务标记为 failed，避免过期任务堆积干扰后续流程。"""
+        self.mongo.connect()
+        col = self.mongo.get_collection(CRAWL_TASKS_COLLECTION)
+        cutoff = int(time.time()) - self.STALE_PENDING_TIMEOUT
+
+        # 兼容旧任务（无 pending_since 字段的用 created_at 兜底）
+        stale = list(
+            col.find(
+                {
+                    "status": "pending",
+                    "$or": [
+                        {"pending_since": {"$lt": cutoff}},
+                        {"pending_since": {"$exists": False}, "created_at": {"$lt": cutoff}},
+                    ],
+                }
+            )
+        )
+
+        if not stale:
+            return 0
+
+        reaped = 0
+        for task in stale:
+            task_id = task["task_id"]
+            platform = task.get("platform", "unknown")
+            age_min = (time.time() - task.get("pending_since", task.get("created_at", 0))) / 60
+
+            self._update_task_status(
+                task_id,
+                {
+                    "status": "failed",
+                    "error": f"stale_abandoned: pending 超过 {age_min:.0f} 分钟",
+                    "end_time": int(time.time()),
+                },
+            )
+            self._remove_from_redis(task_id)
+            logger.warning(
+                f"[Dispatcher] 过期回收: {task_id} ({platform}) "
+                f"pending {age_min:.0f}min → failed"
+            )
+            reaped += 1
+
+        if reaped:
+            logger.info(f"[Dispatcher] 本轮过期 pending 回收: {reaped} 个任务")
+        return reaped
+
+    def _remove_from_redis(self, task_id: str) -> None:
+        """尝试从 Redis 队列移除任务"""
+        queue = self._get_task_queue()
+        if not queue:
+            return
+        try:
+            prefix = "user" if task_id.startswith("ut_") else "candidate"
+            queue.remove_task(task_id, prefix=prefix)
+        except Exception as e:
+            logger.debug(f"[Dispatcher] Redis 移除 {task_id} 失败（可忽略）: {e}")
 
     # ==================== 任务获取 ====================
 
@@ -460,7 +521,7 @@ class TaskDispatcher:
 
         elif status == "blocked":
             # cookie 缺失，退回 pending 并触发熔断器（避免每 10 秒无限重试）
-            self._update_task_status(task_id, {"status": "pending"})
+            self._update_task_status(task_id, {"status": "pending", "pending_since": int(time.time())})
             logger.warning(f"[Dispatcher] 任务 {task_id} 因 cookie 缺失阻塞")
             if not self._is_circuit_open(platform):
                 self._trip_circuit(platform, "cookie 缺失")
@@ -491,6 +552,7 @@ class TaskDispatcher:
                         "attempts": attempts,
                         "next_retry_at": next_retry,
                         "last_error": result.get("error", "unknown"),
+                        "pending_since": int(time.time()),
                     },
                 )
                 logger.info(
@@ -584,6 +646,7 @@ class TaskDispatcher:
         while self._running:
             try:
                 self._reap_zombie_tasks()
+                self._reap_stale_pending_tasks()
             except Exception as e:
                 logger.error(f"[Dispatcher] 僵尸回收异常: {e}")
             await asyncio.sleep(300)
@@ -609,6 +672,7 @@ class TaskDispatcher:
         # 启动时立即回收僵尸任务（处理上次异常退出遗留的 running 任务）
         try:
             self._reap_zombie_tasks()
+            self._reap_stale_pending_tasks()
         except Exception as e:
             logger.error(f"[Dispatcher] 启动僵尸回收异常: {e}")
 
