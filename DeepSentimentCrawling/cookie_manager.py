@@ -127,6 +127,7 @@ class CookieManager:
         self.mongo.create_indexes(COLLECTION, [
             {"keys": [("cookie_id", 1)], "options": {"unique": True}},
             {"keys": [("platform", 1), ("status", 1)]},
+            {"keys": [("expired_at", 1)], "options": {"expireAfterSeconds": 7 * 24 * 3600}},
         ])
 
     def save_cookies(self, platform: str, cookie_dict: dict) -> str:
